@@ -1,5 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Check, ArrowRight, TrendingUp, Clock, DollarSign, Target, X, LayoutDashboard, Globe, Megaphone, BarChart3, Plus, Lightbulb, Upload, Sparkles } from 'lucide-react';
+import { Check, ArrowRight, TrendingUp, Clock, DollarSign, Target, X, LayoutDashboard, Megaphone, BarChart3, Plus, Lightbulb, Upload, Sparkles, Mail } from 'lucide-react';
+import { CreateLandingPageStep } from './wizard/steps/CreateLandingPageStep';
+import { SetupMetaAdsStep } from './wizard/steps/SetupMetaAdsStep';
+import { SetupEmailReceivingStep } from './wizard/steps/SetupEmailReceivingStep';
+import { AnalyzeResultsStep } from './wizard/steps/AnalyzeResultsStep';
 
 export default function App() {
   const [activeQuestion, setActiveQuestion] = useState<number | null>(null);
@@ -9,7 +13,7 @@ export default function App() {
   const [phraseIndex, setPhraseIndex] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [activeStep, setActiveStep] = useState<'landing' | 'domain' | 'ads' | 'results'>('landing');
+  const [activeStep, setActiveStep] = useState<'landing' | 'domain' | 'ads' | 'email' | 'results'>('landing');
   const [showNewIdeaInput, setShowNewIdeaInput] = useState(false);
   const [ideaInput, setIdeaInput] = useState('');
   const [domainChoice, setDomainChoice] = useState<'custom' | 'trusignal' | null>(null);
@@ -18,10 +22,11 @@ export default function App() {
   const [hasInstagramPage, setHasInstagramPage] = useState<boolean | null>(null);
   const [facebookPageUrl, setFacebookPageUrl] = useState('');
   const [instagramPageUrl, setInstagramPageUrl] = useState('');
+  const [wantsEmailReceiving, setWantsEmailReceiving] = useState<boolean | null>(null);
+  const [receivingEmail, setReceivingEmail] = useState('');
 
   // Wizard sub-steps
   const [landingSubStep, setLandingSubStep] = useState(1);
-  const [domainSubStep, setDomainSubStep] = useState(1);
   const [adsSubStep, setAdsSubStep] = useState(1);
   
   // Landing page form data
@@ -36,6 +41,13 @@ export default function App() {
   const [adHeadline, setAdHeadline] = useState('');
   const [adDescription, setAdDescription] = useState('');
   const [adCta, setAdCta] = useState('');
+
+  // Ad setup & launch data
+  const [adAgeMin, setAdAgeMin] = useState(18);
+  const [adAgeMax, setAdAgeMax] = useState(65);
+  const [adCountries, setAdCountries] = useState<string[]>([]);
+  const [adBudgetPerDay, setAdBudgetPerDay] = useState<10 | 25 | 50 | null>(null);
+  const [adDurationDays, setAdDurationDays] = useState<3 | 7 | 10 | null>(null);
 
   const phrases = [
     "Validate a Bakery in my town...",
@@ -85,8 +97,8 @@ export default function App() {
 
   const steps = [
     { id: 'landing' as const, icon: LayoutDashboard, label: 'Create Landing Page' },
-    { id: 'domain' as const, icon: Globe, label: 'Setup Domain' },
     { id: 'ads' as const, icon: Megaphone, label: 'Setup Meta Ads' },
+    { id: 'email' as const, icon: Mail, label: 'Setup Email Receiving', optional: true },
     { id: 'results' as const, icon: BarChart3, label: 'Analyze Results' },
   ];
 
@@ -123,7 +135,7 @@ export default function App() {
                 >
                   <step.icon className="w-5 h-5" />
                   <div>
-                    <div className="text-xs text-gray-500">Step {index + 1}</div>
+                    <div className="text-xs text-gray-500">Step {index + 1}{step.optional ? ' (Optional)' : ''}</div>
                     <div className="font-medium">{step.label}</div>
                   </div>
                 </button>
@@ -146,792 +158,76 @@ export default function App() {
           <div className="max-w-4xl mx-auto p-8">
             {/* Landing Page Step */}
             {activeStep === 'landing' && (
-              <div>
-                <h1 className="text-4xl font-bold text-white mb-6 text-center">Create Landing Page</h1>
-                
-                {/* Rationale Panel */}
-                <div className="bg-gradient-to-r from-amber-500/10 to-yellow-500/10 border border-amber-500/30 rounded-xl p-5 mb-8 flex items-start gap-4">
-                  <Lightbulb className="w-6 h-6 text-amber-400 flex-shrink-0 mt-0.5" />
-                  <p className="text-amber-100 text-lg">
-                    So you can track real clicks and measure genuine interest
-                  </p>
-                </div>
-
-                {/* Progress Indicator */}
-                <div className="flex items-center justify-center gap-2 mb-8">
-                  {[1, 2, 3].map((step) => (
-                    <div key={step} className="flex items-center">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${
-                        landingSubStep === step
-                          ? 'bg-indigo-600 text-white'
-                          : landingSubStep > step
-                          ? 'bg-indigo-600/30 text-indigo-400'
-                          : 'bg-gray-800 text-gray-500'
-                      }`}>
-                        {step}
-                      </div>
-                      {step < 3 && (
-                        <div className={`w-16 h-1 ${
-                          landingSubStep > step ? 'bg-indigo-600/30' : 'bg-gray-800'
-                        }`}></div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                {/* Sub-step 1: Describe Idea */}
-                {landingSubStep === 1 && (
-                  <div>
-                    <h2 className="text-3xl font-bold text-white mb-4">Tell us about your idea</h2>
-                    <p className="text-gray-400 mb-8">
-                      Help us understand what you want to validate.
-                    </p>
-                    <div className="bg-gray-900 rounded-xl p-8 border border-gray-800">
-                      <div className="space-y-6">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-2">
-                            What's your idea? *
-                          </label>
-                          <textarea
-                            placeholder="e.g., A meal prep service for busy professionals that delivers healthy, pre-portioned ingredients..."
-                            value={ideaDescription}
-                            onChange={(e) => setIdeaDescription(e.target.value)}
-                            className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors h-32"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Who is it for? *
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="e.g., Working professionals ages 25-40 who value health but lack time..."
-                            value={targetAudience}
-                            onChange={(e) => setTargetAudience(e.target.value)}
-                            className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-2">
-                            What problem does it solve? *
-                          </label>
-                          <textarea
-                            placeholder="e.g., Removes the guesswork and time spent on meal planning and grocery shopping..."
-                            value={problemSolved}
-                            onChange={(e) => setProblemSolved(e.target.value)}
-                            className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors h-24"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Promise Panel */}
-                    <div className="mt-8 bg-gradient-to-br from-indigo-900/40 to-purple-900/40 border border-indigo-500/50 rounded-xl p-8">
-                      <h3 className="text-xl font-semibold text-white mb-3">What happens next</h3>
-                      <p className="text-indigo-200 text-lg mb-6">
-                        We will create several landing page samples for you to choose from, tailored to your idea and target audience.
-                      </p>
-                      <div className="flex justify-end">
-                        <button
-                          onClick={() => setLandingSubStep(2)}
-                          disabled={!ideaDescription || !targetAudience || !problemSolved}
-                          className="px-8 py-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold text-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          Continue
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Sub-step 2: Choose Template */}
-                {landingSubStep === 2 && (
-                  <div>
-                    <h1 className="text-4xl font-bold text-white mb-4">Choose your landing page style</h1>
-                    <p className="text-gray-400 mb-8">
-                      Select a template that matches your idea type.
-                    </p>
-                    <div className="bg-gray-900 rounded-xl p-8 border border-gray-800">
-                      <div className="grid md:grid-cols-2 gap-4 mb-6">
-                        {[
-                          { id: 'modern', name: 'Modern SaaS', desc: 'Clean, minimal design for tech products' },
-                          { id: 'bold', name: 'Bold & Vibrant', desc: 'Eye-catching colors for consumer products' },
-                          { id: 'professional', name: 'Professional', desc: 'Trust-building layout for B2B services' },
-                          { id: 'ecommerce', name: 'E-commerce', desc: 'Product-focused design for online stores' }
-                        ].map((template) => (
-                          <button
-                            key={template.id}
-                            onClick={() => setSelectedTemplate(template.id)}
-                            className={`p-6 rounded-lg border-2 text-left transition-all ${
-                              selectedTemplate === template.id
-                                ? 'border-indigo-500 bg-indigo-500/10'
-                                : 'border-gray-700 hover:border-gray-600'
-                            }`}
-                          >
-                            <div className="flex items-center gap-3 mb-2">
-                              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                                selectedTemplate === template.id ? 'border-indigo-500' : 'border-gray-600'
-                              }`}>
-                                {selectedTemplate === template.id && (
-                                  <div className="w-3 h-3 rounded-full bg-indigo-500"></div>
-                                )}
-                              </div>
-                              <h3 className="text-lg font-semibold text-white">{template.name}</h3>
-                            </div>
-                            <p className="text-gray-400 text-sm ml-8">{template.desc}</p>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Promise Panel */}
-                    <div className="mt-8 bg-gradient-to-br from-indigo-900/40 to-purple-900/40 border border-indigo-500/50 rounded-xl p-8">
-                      <h3 className="text-xl font-semibold text-white mb-3">What happens next</h3>
-                      <p className="text-indigo-200 text-lg mb-6">
-                        We will create several landing page samples for you to choose from, tailored to your idea and target audience.
-                      </p>
-                      <div className="flex justify-between">
-                        <button
-                          onClick={() => setLandingSubStep(1)}
-                          className="px-6 py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors font-semibold"
-                        >
-                          Back
-                        </button>
-                        <button
-                          onClick={() => setLandingSubStep(3)}
-                          disabled={!selectedTemplate}
-                          className="px-8 py-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold text-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          Continue
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Sub-step 3: Preview & Launch */}
-                {landingSubStep === 3 && (
-                  <div>
-                    <h1 className="text-4xl font-bold text-white mb-4">Review your landing page</h1>
-                    <p className="text-gray-400 mb-8">
-                      We'll create your page based on this information.
-                    </p>
-                    <div className="bg-gray-900 rounded-xl p-8 border border-gray-800">
-                      <div className="space-y-6 mb-8">
-                        <div>
-                          <h3 className="text-sm font-medium text-gray-400 mb-2">Your Idea</h3>
-                          <p className="text-white">{ideaDescription}</p>
-                        </div>
-                        <div>
-                          <h3 className="text-sm font-medium text-gray-400 mb-2">Target Audience</h3>
-                          <p className="text-white">{targetAudience}</p>
-                        </div>
-                        <div>
-                          <h3 className="text-sm font-medium text-gray-400 mb-2">Problem Solved</h3>
-                          <p className="text-white">{problemSolved}</p>
-                        </div>
-                        <div>
-                          <h3 className="text-sm font-medium text-gray-400 mb-2">Template</h3>
-                          <p className="text-white capitalize">{selectedTemplate}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Promise Panel */}
-                    <div className="mt-8 bg-gradient-to-br from-indigo-900/40 to-purple-900/40 border border-indigo-500/50 rounded-xl p-8">
-                      <h3 className="text-xl font-semibold text-white mb-3">What happens next</h3>
-                      <p className="text-indigo-200 text-lg mb-6">
-                        We will create several landing page samples for you to choose from, tailored to your idea and target audience.
-                      </p>
-                      <div className="flex justify-between">
-                        <button
-                          onClick={() => setLandingSubStep(2)}
-                          className="px-6 py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors font-semibold"
-                        >
-                          Back
-                        </button>
-                        <button
-                          onClick={() => {
-                            setActiveStep('domain');
-                            setLandingSubStep(1);
-                          }}
-                          className="px-8 py-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold text-lg"
-                        >
-                          Create Landing Page
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
+              <CreateLandingPageStep
+                landingSubStep={landingSubStep}
+                setLandingSubStep={setLandingSubStep}
+                ideaDescription={ideaDescription}
+                setIdeaDescription={setIdeaDescription}
+                targetAudience={targetAudience}
+                setTargetAudience={setTargetAudience}
+                problemSolved={problemSolved}
+                setProblemSolved={setProblemSolved}
+                selectedTemplate={selectedTemplate}
+                setSelectedTemplate={setSelectedTemplate}
+                domainChoice={domainChoice}
+                setDomainChoice={setDomainChoice}
+                customDomain={customDomain}
+                setCustomDomain={setCustomDomain}
+                setActiveStep={setActiveStep}
+              />
             )}
 
-            {/* Domain Setup Step */}
-            {activeStep === 'domain' && (
-              <div>
-                <h1 className="text-4xl font-bold text-white mb-6 text-center">Setup Domain</h1>
-                
-                {/* Rationale Panel */}
-                <div className="bg-gradient-to-r from-amber-500/10 to-yellow-500/10 border border-amber-500/30 rounded-xl p-5 mb-8 flex items-start gap-4 max-w-3xl mx-auto">
-                  <Lightbulb className="w-6 h-6 text-amber-400 flex-shrink-0 mt-0.5" />
-                  <p className="text-amber-100 text-lg">
-                    So visitors see a real, trusted URL when they land on your page
-                  </p>
-                </div>
-
-                <div className="max-w-3xl mx-auto">
-                  {/* TruSignal Domain Option */}
-                  <div className="bg-gray-900 rounded-xl p-8 border border-gray-800">
-                    <button
-                      onClick={() => setDomainChoice('trusignal')}
-                      className={`w-full p-8 rounded-lg border-2 text-left transition-all ${
-                        domainChoice === 'trusignal'
-                          ? 'border-indigo-500 bg-indigo-500/10'
-                          : 'border-gray-700 hover:border-gray-600'
-                      }`}
-                    >
-                      <div className="flex items-center gap-4 mb-3">
-                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                          domainChoice === 'trusignal' ? 'border-indigo-500' : 'border-gray-600'
-                        }`}>
-                          {domainChoice === 'trusignal' && (
-                            <div className="w-3.5 h-3.5 rounded-full bg-indigo-500"></div>
-                          )}
-                        </div>
-                        <h3 className="text-2xl font-bold text-white">Use TruSignal Domain</h3>
-                      </div>
-                      <p className="text-gray-400 text-lg ml-10">
-                        Your landing page will be hosted at <span className="text-indigo-400 font-mono">app.trusignal.tech/your-idea</span>
-                      </p>
-                      <p className="text-gray-500 text-sm ml-10 mt-2">
-                        Quick setup • No DNS configuration needed
-                      </p>
-                    </button>
-                  </div>
-
-                  {/* OR Divider */}
-                  <div className="relative py-8">
-                    <div className="absolute inset-0 flex items-center">
-                      <div className="w-full border-t-2 border-gray-800"></div>
-                    </div>
-                    <div className="relative flex justify-center">
-                      <span className="px-6 py-2 bg-black text-gray-400 text-2xl font-bold">
-                        OR
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Custom Domain Option */}
-                  <div className="bg-gray-900 rounded-xl p-8 border border-gray-800">
-                    <button
-                      onClick={() => setDomainChoice('custom')}
-                      className={`w-full p-8 rounded-lg border-2 text-left transition-all ${
-                        domainChoice === 'custom'
-                          ? 'border-indigo-500 bg-indigo-500/10'
-                          : 'border-gray-700 hover:border-gray-600'
-                      }`}
-                    >
-                      <div className="flex items-center gap-4 mb-3">
-                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                          domainChoice === 'custom' ? 'border-indigo-500' : 'border-gray-600'
-                        }`}>
-                          {domainChoice === 'custom' && (
-                            <div className="w-3.5 h-3.5 rounded-full bg-indigo-500"></div>
-                          )}
-                        </div>
-                        <h3 className="text-2xl font-bold text-white">Use Custom Domain</h3>
-                      </div>
-                      <p className="text-gray-400 text-lg ml-10">
-                        Connect your own domain name for a branded experience
-                      </p>
-                      <p className="text-gray-500 text-sm ml-10 mt-2">
-                        Requires DNS setup • More professional appearance
-                      </p>
-                    </button>
-
-                    {domainChoice === 'custom' && (
-                      <div className="mt-6">
-                        <label className="block text-sm font-medium text-gray-300 mb-2">
-                          Enter your domain
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="yourdomain.com"
-                          value={customDomain}
-                          onChange={(e) => setCustomDomain(e.target.value)}
-                          className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
-                        />
-                        <p className="text-gray-500 text-sm mt-2">
-                          We'll provide DNS instructions after you continue.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  {domainChoice && (
-                    <div className="mt-8 bg-gradient-to-br from-indigo-900/40 to-purple-900/40 border border-indigo-500/50 rounded-xl p-8">
-                      <h3 className="text-xl font-semibold text-white mb-3">What happens next</h3>
-                      <p className="text-indigo-200 text-lg mb-6">
-                        We will launch your landing page on this domain and ensure it's live and ready to receive visitors.
-                      </p>
-                      <div className="flex justify-center">
-                        <button
-                          onClick={() => setActiveStep('ads')}
-                          className="px-8 py-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold text-lg"
-                        >
-                          Continue to Meta Ads Setup
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
 
             {/* Meta Ads Setup Step */}
             {activeStep === 'ads' && (
-              <div>
-                <h1 className="text-4xl font-bold text-white mb-6 text-center">Setup Meta Ads</h1>
-                
-                {/* Rationale Panel */}
-                <div className="bg-gradient-to-r from-amber-500/10 to-yellow-500/10 border border-amber-500/30 rounded-xl p-5 mb-8 flex items-start gap-4 max-w-3xl mx-auto">
-                  <Lightbulb className="w-6 h-6 text-amber-400 flex-shrink-0 mt-0.5" />
-                  <p className="text-amber-100 text-lg">
-                    So we can run real ads and drive targeted traffic to test demand
-                  </p>
-                </div>
+              <SetupMetaAdsStep
+                adsSubStep={adsSubStep}
+                setAdsSubStep={setAdsSubStep}
+                hasFacebookPage={hasFacebookPage}
+                setHasFacebookPage={setHasFacebookPage}
+                hasInstagramPage={hasInstagramPage}
+                setHasInstagramPage={setHasInstagramPage}
+                facebookPageUrl={facebookPageUrl}
+                setFacebookPageUrl={setFacebookPageUrl}
+                instagramPageUrl={instagramPageUrl}
+                setInstagramPageUrl={setInstagramPageUrl}
+                adImageMethod={adImageMethod}
+                setAdImageMethod={setAdImageMethod}
+                adImageUrl={adImageUrl}
+                setAdImageUrl={setAdImageUrl}
+                adHeadline={adHeadline}
+                setAdHeadline={setAdHeadline}
+                adDescription={adDescription}
+                setAdDescription={setAdDescription}
+                adCta={adCta}
+                setAdCta={setAdCta}
+                adAgeMin={adAgeMin}
+                setAdAgeMin={setAdAgeMin}
+                adAgeMax={adAgeMax}
+                setAdAgeMax={setAdAgeMax}
+                adCountries={adCountries}
+                setAdCountries={setAdCountries}
+                adBudgetPerDay={adBudgetPerDay}
+                setAdBudgetPerDay={setAdBudgetPerDay}
+                adDurationDays={adDurationDays}
+                setAdDurationDays={setAdDurationDays}
+                setActiveStep={setActiveStep}
+              />
+            )}
 
-                {/* Progress Indicator */}
-                <div className="flex items-center justify-center gap-2 mb-8">
-                  {[1, 2].map((step) => (
-                    <div key={step} className="flex items-center">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${
-                        adsSubStep === step
-                          ? 'bg-indigo-600 text-white'
-                          : adsSubStep > step
-                          ? 'bg-indigo-600/30 text-indigo-400'
-                          : 'bg-gray-800 text-gray-500'
-                      }`}>
-                        {step}
-                      </div>
-                      {step < 2 && (
-                        <div className={`w-16 h-1 ${
-                          adsSubStep > step ? 'bg-indigo-600/30' : 'bg-gray-800'
-                        }`}></div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                {/* Sub-step 1: Connect Pages */}
-                {adsSubStep === 1 && (
-                  <div>
-                    <h2 className="text-3xl font-bold text-white mb-4 text-center">Connect your social pages</h2>
-                    <p className="text-gray-400 mb-8 text-center">
-                      Link your Facebook and Instagram pages to run ads.
-                    </p>
-
-                    <div className="max-w-3xl mx-auto space-y-8">
-                  {/* Facebook Page Section */}
-                  <div className="bg-gray-900 rounded-xl p-8 border border-gray-800">
-                    <div className="flex items-center gap-3 mb-6">
-                      <div className="w-12 h-12 rounded-lg bg-blue-600 flex items-center justify-center flex-shrink-0">
-                        <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-                        </svg>
-                      </div>
-                      <div>
-                        <h3 className="text-2xl font-bold text-white">Facebook Page</h3>
-                        <p className="text-gray-400 text-sm">Connect your Facebook business page</p>
-                      </div>
-                    </div>
-
-                    <p className="text-gray-300 mb-4">Do you have a Facebook page?</p>
-                    <div className="flex gap-4 mb-6">
-                      <button
-                        onClick={() => setHasFacebookPage(true)}
-                        className={`flex-1 px-6 py-4 rounded-lg border-2 font-semibold transition-all ${
-                          hasFacebookPage === true
-                            ? 'border-indigo-500 bg-indigo-500/10 text-white'
-                            : 'border-gray-700 text-gray-400 hover:border-gray-600'
-                        }`}
-                      >
-                        Yes, I have one
-                      </button>
-                      <button
-                        onClick={() => setHasFacebookPage(false)}
-                        className={`flex-1 px-6 py-4 rounded-lg border-2 font-semibold transition-all ${
-                          hasFacebookPage === false
-                            ? 'border-indigo-500 bg-indigo-500/10 text-white'
-                            : 'border-gray-700 text-gray-400 hover:border-gray-600'
-                        }`}
-                      >
-                        No, create one for me
-                      </button>
-                    </div>
-
-                    {hasFacebookPage === true && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">
-                          Facebook Page URL
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="https://facebook.com/yourpage"
-                          value={facebookPageUrl}
-                          onChange={(e) => setFacebookPageUrl(e.target.value)}
-                          className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
-                        />
-                      </div>
-                    )}
-
-                    {hasFacebookPage === false && (
-                      <div className="bg-indigo-900/20 border border-indigo-500/30 rounded-lg p-5">
-                        <p className="text-indigo-300">
-                          ✓ We'll help you create a Facebook page optimized for your validation test.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Instagram Page Section */}
-                  <div className="bg-gray-900 rounded-xl p-8 border border-gray-800">
-                    <div className="flex items-center gap-3 mb-6">
-                      <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-purple-600 via-pink-600 to-orange-500 flex items-center justify-center flex-shrink-0">
-                        <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
-                        </svg>
-                      </div>
-                      <div>
-                        <h3 className="text-2xl font-bold text-white">Instagram Page</h3>
-                        <p className="text-gray-400 text-sm">Connect your Instagram business account</p>
-                      </div>
-                    </div>
-
-                    <p className="text-gray-300 mb-4">Do you have an Instagram page?</p>
-                    <div className="flex gap-4 mb-6">
-                      <button
-                        onClick={() => setHasInstagramPage(true)}
-                        className={`flex-1 px-6 py-4 rounded-lg border-2 font-semibold transition-all ${
-                          hasInstagramPage === true
-                            ? 'border-indigo-500 bg-indigo-500/10 text-white'
-                            : 'border-gray-700 text-gray-400 hover:border-gray-600'
-                        }`}
-                      >
-                        Yes, I have one
-                      </button>
-                      <button
-                        onClick={() => setHasInstagramPage(false)}
-                        className={`flex-1 px-6 py-4 rounded-lg border-2 font-semibold transition-all ${
-                          hasInstagramPage === false
-                            ? 'border-indigo-500 bg-indigo-500/10 text-white'
-                            : 'border-gray-700 text-gray-400 hover:border-gray-600'
-                        }`}
-                      >
-                        No, create one for me
-                      </button>
-                    </div>
-
-                    {hasInstagramPage === true && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">
-                          Instagram Page URL
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="https://instagram.com/yourpage"
-                          value={instagramPageUrl}
-                          onChange={(e) => setInstagramPageUrl(e.target.value)}
-                          className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
-                        />
-                      </div>
-                    )}
-
-                    {hasInstagramPage === false && (
-                      <div className="bg-indigo-900/20 border border-indigo-500/30 rounded-lg p-5">
-                        <p className="text-indigo-300">
-                          ✓ We'll help you create an Instagram account optimized for your validation test.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  {(hasFacebookPage !== null || hasInstagramPage !== null) && (
-                    <div className="bg-gradient-to-br from-indigo-900/40 to-purple-900/40 border border-indigo-500/50 rounded-xl p-8">
-                      <h3 className="text-xl font-semibold text-white mb-3">What happens next</h3>
-                      <p className="text-indigo-200 text-lg mb-6">
-                        Now let's create your ad creative that will be shown to your target audience.
-                      </p>
-                      <div className="flex justify-center">
-                        <button
-                          onClick={() => setAdsSubStep(2)}
-                          className="px-8 py-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold text-lg"
-                        >
-                          Create Ad
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Sub-step 2: Create Ad */}
-              {adsSubStep === 2 && (
-                <div>
-                  <h2 className="text-3xl font-bold text-white mb-4 text-center">Create your ad</h2>
-                  <p className="text-gray-400 mb-8 text-center">
-                    Design the ad that will attract your target audience.
-                  </p>
-
-                  <div className="max-w-3xl mx-auto">
-                    {/* Image Selection */}
-                    <div className="bg-gray-900 rounded-xl p-8 border border-gray-800 mb-6">
-                      <h3 className="text-xl font-semibold text-white mb-4">Ad Image</h3>
-                      <div className="grid grid-cols-2 gap-4 mb-6">
-                        <button
-                          onClick={() => setAdImageMethod('upload')}
-                          className={`p-6 rounded-lg border-2 transition-all ${
-                            adImageMethod === 'upload'
-                              ? 'border-indigo-500 bg-indigo-500/10'
-                              : 'border-gray-700 hover:border-gray-600'
-                          }`}
-                        >
-                          <Upload className={`w-8 h-8 mx-auto mb-3 ${adImageMethod === 'upload' ? 'text-indigo-400' : 'text-gray-400'}`} />
-                          <h4 className="text-lg font-semibold text-white mb-1">Upload Image</h4>
-                          <p className="text-gray-400 text-sm">Use your own image</p>
-                        </button>
-                        <button
-                          onClick={() => {
-                            setAdImageMethod('ai');
-                            setAdImageUrl('https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&q=80');
-                          }}
-                          className={`p-6 rounded-lg border-2 transition-all ${
-                            adImageMethod === 'ai'
-                              ? 'border-indigo-500 bg-indigo-500/10'
-                              : 'border-gray-700 hover:border-gray-600'
-                          }`}
-                        >
-                          <Sparkles className={`w-8 h-8 mx-auto mb-3 ${adImageMethod === 'ai' ? 'text-indigo-400' : 'text-gray-400'}`} />
-                          <h4 className="text-lg font-semibold text-white mb-1">AI Create</h4>
-                          <p className="text-gray-400 text-sm">Generate with AI</p>
-                        </button>
-                      </div>
-
-                      {adImageMethod === 'upload' && (
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Image URL
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="https://example.com/image.jpg"
-                            value={adImageUrl}
-                            onChange={(e) => setAdImageUrl(e.target.value)}
-                            className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
-                          />
-                        </div>
-                      )}
-
-                      {adImageMethod === 'ai' && (
-                        <div className="bg-indigo-900/20 border border-indigo-500/30 rounded-lg p-5">
-                          <p className="text-indigo-300 mb-3">
-                            ✓ AI will generate an image based on your idea description
-                          </p>
-                          {adImageUrl && (
-                            <img src={adImageUrl} alt="AI Generated Preview" className="w-full rounded-lg" />
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Ad Copy */}
-                    <div className="bg-gray-900 rounded-xl p-8 border border-gray-800 mb-6">
-                      <h3 className="text-xl font-semibold text-white mb-4">Ad Creative</h3>
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Headline *
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="e.g., Transform Your Mornings"
-                            value={adHeadline}
-                            onChange={(e) => setAdHeadline(e.target.value)}
-                            maxLength={40}
-                            className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
-                          />
-                          <p className="text-gray-500 text-sm mt-1">{adHeadline.length}/40 characters</p>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Description *
-                          </label>
-                          <textarea
-                            placeholder="e.g., Healthy meal prep delivered to your door. Save time, eat better."
-                            value={adDescription}
-                            onChange={(e) => setAdDescription(e.target.value)}
-                            maxLength={125}
-                            className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors h-24"
-                          />
-                          <p className="text-gray-500 text-sm mt-1">{adDescription.length}/125 characters</p>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Call to Action *
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="e.g., Learn More"
-                            value={adCta}
-                            onChange={(e) => setAdCta(e.target.value)}
-                            className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Ad Format Previews */}
-                    {adImageUrl && adHeadline && adDescription && adCta && (
-                      <div className="bg-gray-900 rounded-xl p-8 border border-gray-800 mb-6">
-                        <h3 className="text-xl font-semibold text-white mb-6">Ad Format Previews</h3>
-                        <div className="grid md:grid-cols-3 gap-6">
-                          {/* 1:1 Square */}
-                          <div>
-                            <h4 className="text-sm font-medium text-gray-400 mb-3 text-center">1:1 Square (Feed)</h4>
-                            <div className="bg-gray-800 rounded-lg overflow-hidden border border-gray-700">
-                              <div className="aspect-square">
-                                <img src={adImageUrl} alt="Ad preview" className="w-full h-full object-cover" />
-                              </div>
-                              <div className="p-4">
-                                <h5 className="text-white font-semibold mb-1 text-sm">{adHeadline}</h5>
-                                <p className="text-gray-400 text-xs mb-3 line-clamp-2">{adDescription}</p>
-                                <button className="w-full py-2 bg-indigo-600 text-white rounded text-xs font-semibold">
-                                  {adCta}
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* 9:16 Vertical (Story) */}
-                          <div>
-                            <h4 className="text-sm font-medium text-gray-400 mb-3 text-center">9:16 Story</h4>
-                            <div className="bg-gray-800 rounded-lg overflow-hidden border border-gray-700 max-w-[200px] mx-auto">
-                              <div style={{ aspectRatio: '9/16' }}>
-                                <img src={adImageUrl} alt="Ad preview" className="w-full h-full object-cover" />
-                              </div>
-                              <div className="p-3">
-                                <h5 className="text-white font-semibold mb-1 text-xs">{adHeadline}</h5>
-                                <p className="text-gray-400 text-xs mb-2 line-clamp-2">{adDescription}</p>
-                                <button className="w-full py-1.5 bg-indigo-600 text-white rounded text-xs font-semibold">
-                                  {adCta}
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* 16:9 Horizontal */}
-                          <div>
-                            <h4 className="text-sm font-medium text-gray-400 mb-3 text-center">16:9 Horizontal</h4>
-                            <div className="bg-gray-800 rounded-lg overflow-hidden border border-gray-700">
-                              <div style={{ aspectRatio: '16/9' }}>
-                                <img src={adImageUrl} alt="Ad preview" className="w-full h-full object-cover" />
-                              </div>
-                              <div className="p-3">
-                                <h5 className="text-white font-semibold mb-1 text-sm">{adHeadline}</h5>
-                                <p className="text-gray-400 text-xs mb-2 line-clamp-2">{adDescription}</p>
-                                <button className="w-full py-2 bg-indigo-600 text-white rounded text-xs font-semibold">
-                                  {adCta}
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Promise Panel */}
-                    {adImageUrl && adHeadline && adDescription && adCta && (
-                      <div className="bg-gradient-to-br from-indigo-900/40 to-purple-900/40 border border-indigo-500/50 rounded-xl p-8">
-                        <h3 className="text-xl font-semibold text-white mb-3">What happens next</h3>
-                        <p className="text-indigo-200 text-lg mb-6">
-                          We will launch a minimal amount of ads to gauge your target audience's interest and gather real market data.
-                        </p>
-                        <div className="flex justify-between">
-                          <button
-                            onClick={() => setAdsSubStep(1)}
-                            className="px-6 py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors font-semibold"
-                          >
-                            Back
-                          </button>
-                          <button
-                            onClick={() => setActiveStep('results')}
-                            className="px-8 py-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold text-lg"
-                          >
-                            Launch Validation Test
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-              </div>
+            {/* Setup Email Receiving Step (Optional) */}
+            {activeStep === 'email' && (
+              <SetupEmailReceivingStep
+                wantsEmailReceiving={wantsEmailReceiving}
+                setWantsEmailReceiving={setWantsEmailReceiving}
+                receivingEmail={receivingEmail}
+                setReceivingEmail={setReceivingEmail}
+                setActiveStep={setActiveStep}
+              />
             )}
 
             {/* Analyze Results Step */}
-            {activeStep === 'results' && (
-              <div>
-                <h1 className="text-4xl font-bold text-white mb-6 text-center">Analyze Results</h1>
-                
-                {/* Rationale Panel */}
-                <div className="bg-gradient-to-r from-amber-500/10 to-yellow-500/10 border border-amber-500/30 rounded-xl p-5 mb-8 flex items-start gap-4">
-                  <Lightbulb className="w-6 h-6 text-amber-400 flex-shrink-0 mt-0.5" />
-                  <p className="text-amber-100 text-lg">
-                    So you can gauge interest in real-time and make data-driven decisions about your idea's market fit
-                  </p>
-                </div>
-
-                <div className="bg-gray-900 rounded-xl p-8 border border-gray-800">
-                  <div className="text-center py-12">
-                    <BarChart3 className="w-16 h-16 text-indigo-400 mx-auto mb-4" />
-                    <h3 className="text-xl font-semibold text-white mb-2">Test in Progress</h3>
-                    <p className="text-gray-400 mb-6">
-                      We're launching your landing page and ads. Check back in 24-48 hours for initial results.
-                    </p>
-                    <div className="grid grid-cols-3 gap-4 max-w-2xl mx-auto">
-                      <div className="bg-gray-800 rounded-lg p-6">
-                        <div className="text-3xl font-bold text-white mb-1">0</div>
-                        <div className="text-sm text-gray-400">Page Visits</div>
-                      </div>
-                      <div className="bg-gray-800 rounded-lg p-6">
-                        <div className="text-3xl font-bold text-white mb-1">0</div>
-                        <div className="text-sm text-gray-400">Sign-ups</div>
-                      </div>
-                      <div className="bg-gray-800 rounded-lg p-6">
-                        <div className="text-3xl font-bold text-white mb-1">0%</div>
-                        <div className="text-sm text-gray-400">Conversion Rate</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Promise Panel with Actions */}
-                <div className="mt-8 bg-gradient-to-br from-indigo-900/40 to-purple-900/40 border border-indigo-500/50 rounded-xl p-8">
-                  <h3 className="text-xl font-semibold text-white mb-3">What you can do</h3>
-                  <p className="text-indigo-200 text-lg mb-6">
-                    Monitor real-time results to gauge market interest, then decide whether to stop the experiment or continue to iterate and optimize.
-                  </p>
-                  <div className="flex gap-4 justify-center">
-                    <button className="px-8 py-4 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors font-semibold text-lg">
-                      Stop Experiment
-                    </button>
-                    <button className="px-8 py-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold text-lg">
-                      Continue to Iterate
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
+            {activeStep === 'results' && <AnalyzeResultsStep />}
           </div>
         </div>
 
