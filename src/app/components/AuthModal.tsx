@@ -20,6 +20,12 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
 
   const handleAuth = async (event: React.FormEvent) => {
     event.preventDefault();
+
+    if (!supabase) {
+      setStatusMessage("Authentication is not configured yet.");
+      return;
+    }
+
     setIsSubmitting(true);
     setStatusMessage(null);
 
@@ -45,6 +51,11 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
   };
 
   const handleGoogleSignIn = async () => {
+    if (!supabase) {
+      setStatusMessage("Authentication is not configured yet.");
+      return;
+    }
+
     setIsSubmitting(true);
     setStatusMessage(null);
 
@@ -114,7 +125,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
           <button
             type="submit"
             className="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold disabled:opacity-70"
-            disabled={isSubmitting}
+            disabled={isSubmitting || !supabase}
           >
             {isSignUp ? "Sign Up" : "Sign In"}
           </button>
@@ -137,7 +148,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
           type="button"
           className="w-full px-6 py-3 bg-white text-gray-900 rounded-lg hover:bg-gray-100 transition-colors font-semibold flex items-center justify-center gap-3 disabled:opacity-70"
           onClick={handleGoogleSignIn}
-          disabled={isSubmitting}
+          disabled={isSubmitting || !supabase}
         >
           <svg className="w-5 h-5" viewBox="0 0 24 24">
             <path

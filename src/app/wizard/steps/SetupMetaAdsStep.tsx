@@ -1,3 +1,4 @@
+import { useMemo, useRef, useState } from 'react';
 import { Check, Lightbulb, Upload, Sparkles } from 'lucide-react';
 
 type SetupMetaAdsStepProps = {
@@ -34,6 +35,39 @@ type SetupMetaAdsStepProps = {
   setActiveStep: (step: 'landing' | 'domain' | 'ads' | 'email' | 'results') => void;
 };
 
+declare global {
+  interface Window {
+    FB?: {
+      init: (config: Record<string, unknown>) => void;
+      login: (
+        callback: (response: { status?: string; authResponse?: { accessToken?: string } }) => void,
+        options?: { scope?: string }
+      ) => void;
+      api: (
+        path: string,
+        method: 'GET' | 'POST',
+        params: Record<string, unknown>,
+        callback: (response: any) => void
+      ) => void;
+    };
+    fbAsyncInit?: () => void;
+  }
+}
+
+type FacebookPage = {
+  id: string;
+  name: string;
+  link?: string;
+  pictureUrl?: string;
+};
+
+type InstagramBusinessAccount = {
+  id: string;
+  username: string;
+  profilePictureUrl?: string;
+  connectedFacebookPageId: string;
+};
+
 export function SetupMetaAdsStep({
   adsSubStep,
   setAdsSubStep,
@@ -67,6 +101,180 @@ export function SetupMetaAdsStep({
   setAdDurationDays,
   setActiveStep,
 }: SetupMetaAdsStepProps) {
+  const facebookAppId = import.meta.env.VITE_FACEBOOK_APP_ID as string | undefined;
+
+  const [metaConnectStatus, setMetaConnectStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [metaAuthStatus, setMetaAuthStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
+  const [metaErrorMessage, setMetaErrorMessage] = useState<string | null>(null);
+
+  const [facebookPages, setFacebookPages] = useState<FacebookPage[]>([]);
+  const [instagramBusinessAccounts, setInstagramBusinessAccounts] = useState<InstagramBusinessAccount[]>([]);
+  const [facebookPageQuery, setFacebookPageQuery] = useState('');
+  const [instagramAccountQuery, setInstagramAccountQuery] = useState('');
+
+  const sdkLoadPromiseRef = useRef<Promise<void> | null>(null);
+  const shouldFetchInstagramAccountsRef = useRef(false);
+
+  const ensureFacebookSdkLoaded = async () => {
+    if (!facebookAppId) {
+      setMetaConnectStatus('error');
+      setMetaErrorMessage('Facebook App ID is not configured.');
+      return false;
+    }
+
+    if (window.FB) {
+      setMetaConnectStatus('ready');
+      return true;
+    }
+
+    if (sdkLoadPromiseRef.current) {
+      await sdkLoadPromiseRef.current;
+      return Boolean(window.FB);
+    }
+
+    setMetaConnectStatus('loading');
+    setMetaErrorMessage(null);
+
+    sdkLoadPromiseRef.current = new Promise<void>((resolve, reject) => {
+      window.fbAsyncInit = () => {
+        try {
+          window.FB?.init({
+            appId: facebookAppId,
+            cookie: true,
+            xfbml: false,
+            version: 'v19.0',
+          });
+          setMetaConnectStatus('ready');
+          resolve();
+        } catch (error) {
+          setMetaConnectStatus('error');
+          setMetaErrorMessage('Failed to initialize Facebook SDK.');
+          reject(error);
+        }
+      };
+
+      const existingScript = document.getElementById('facebook-jssdk');
+
+      if (!existingScript) {
+        const script = document.createElement('script');
+        script.id = 'facebook-jssdk';
+        script.src = 'https://connect.facebook.net/en_US/sdk.js';
+        script.async = true;
+        script.defer = true;
+        script.onerror = () => {
+          setMetaConnectStatus('error');
+          setMetaErrorMessage('Failed to load Facebook SDK.');
+          reject(new Error('facebook sdk load failed'));
+        };
+
+        document.body.appendChild(script);
+      }
+    });
+
+    await sdkLoadPromiseRef.current;
+    return Boolean(window.FB);
+  };
+
+  const connectMetaAccount = async () => {
+    const sdkReady = await ensureFacebookSdkLoaded();
+    if (!sdkReady || !window.FB) return;
+
+    setMetaAuthStatus('connecting');
+    setMetaErrorMessage(null);
+
+    window.FB.login(
+      (response) => {
+        if (response?.authResponse?.accessToken) {
+          setMetaAuthStatus('connected');
+          fetchManagedFacebookPages();
+          return;
+        }
+
+        setMetaAuthStatus('error');
+        setMetaErrorMessage('Login was cancelled or did not return an access token.');
+      },
+      {
+        scope: 'public_profile,email,pages_show_list,pages_read_engagement,instagram_basic',
+      }
+    );
+  };
+
+  const fetchManagedFacebookPages = () => {
+    if (!window.FB) return;
+
+    window.FB.api(
+      '/me/accounts',
+      'GET',
+      {
+        fields: 'id,name,link,picture{url}',
+      },
+      (response) => {
+        const pages = Array.isArray(response?.data)
+          ? (response.data as any[]).map((page) => ({
+              id: String(page.id),
+              name: String(page.name),
+              link: typeof page.link === 'string' ? page.link : undefined,
+              pictureUrl: page?.picture?.data?.url ? String(page.picture.data.url) : undefined,
+            }))
+          : [];
+
+        setFacebookPages(pages);
+
+        if (hasInstagramPage || shouldFetchInstagramAccountsRef.current) {
+          shouldFetchInstagramAccountsRef.current = false;
+          fetchInstagramBusinessAccounts(pages);
+        }
+      }
+    );
+  };
+
+  const fetchInstagramBusinessAccounts = (pages: FacebookPage[]) => {
+    if (!window.FB) return;
+
+    const requests = pages.map(
+      (page) =>
+        new Promise<InstagramBusinessAccount | null>((resolve) => {
+          window.FB?.api(
+            `/${page.id}`,
+            'GET',
+            {
+              fields: 'instagram_business_account{username,id,profile_picture_url}',
+            },
+            (response) => {
+              const ig = response?.instagram_business_account;
+              if (!ig?.id || !ig?.username) {
+                resolve(null);
+                return;
+              }
+
+              resolve({
+                id: String(ig.id),
+                username: String(ig.username),
+                profilePictureUrl: ig.profile_picture_url ? String(ig.profile_picture_url) : undefined,
+                connectedFacebookPageId: page.id,
+              });
+            }
+          );
+        })
+    );
+
+    Promise.all(requests).then((accounts) => {
+      setInstagramBusinessAccounts(accounts.filter(Boolean) as InstagramBusinessAccount[]);
+    });
+  };
+
+  const filteredFacebookPages = useMemo(() => {
+    const normalizedQuery = facebookPageQuery.trim().toLowerCase();
+    if (!normalizedQuery) return facebookPages;
+    return facebookPages.filter((page) => page.name.toLowerCase().includes(normalizedQuery));
+  }, [facebookPages, facebookPageQuery]);
+
+  const filteredInstagramAccounts = useMemo(() => {
+    const normalizedQuery = instagramAccountQuery.trim().toLowerCase();
+    if (!normalizedQuery) return instagramBusinessAccounts;
+    return instagramBusinessAccounts.filter((account) => account.username.toLowerCase().includes(normalizedQuery));
+  }, [instagramBusinessAccounts, instagramAccountQuery]);
+
   const availableCountries = [
     'United States',
     'Canada',
@@ -146,7 +354,10 @@ export function SetupMetaAdsStep({
               <p className="text-gray-300 mb-4">Do you have a Facebook page?</p>
               <div className="flex gap-4 mb-6">
                 <button
-                  onClick={() => setHasFacebookPage(true)}
+                  onClick={() => {
+                    setHasFacebookPage(true);
+                    void connectMetaAccount();
+                  }}
                   className={`flex-1 px-6 py-4 rounded-lg border-2 font-semibold transition-all ${
                     hasFacebookPage === true
                       ? 'border-indigo-500 bg-indigo-500/10 text-white'
@@ -168,15 +379,99 @@ export function SetupMetaAdsStep({
               </div>
 
               {hasFacebookPage === true && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Facebook Page URL</label>
-                  <input
-                    type="text"
-                    placeholder="https://facebook.com/yourpage"
-                    value={facebookPageUrl}
-                    onChange={(e) => setFacebookPageUrl(e.target.value)}
-                    className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
-                  />
+                <div className="space-y-4">
+                  {!facebookAppId ? (
+                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4">
+                      <p className="text-amber-100 text-sm">
+                        Add a Facebook App ID (VITE_FACEBOOK_APP_ID) to enable page search via Facebook Login (permissions: pages_show_list, pages_read_engagement). For now, paste your page URL below.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="bg-gray-800/40 border border-gray-700 rounded-lg p-5">
+                      <div className="flex items-center justify-between gap-4 flex-wrap">
+                        <div>
+                          <div className="text-white font-semibold">Find your Facebook Page</div>
+                          <div className="text-gray-400 text-sm">Connect to list pages you manage.</div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void connectMetaAccount()}
+                          disabled={metaAuthStatus === 'connecting' || metaConnectStatus === 'loading'}
+                          className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold disabled:opacity-50"
+                        >
+                          {metaAuthStatus === 'connecting'
+                            ? 'Connecting...'
+                            : metaAuthStatus === 'connected'
+                              ? 'Re-connect'
+                              : 'Connect Facebook'}
+                        </button>
+                      </div>
+
+                      {metaErrorMessage && <p className="text-red-400 text-sm mt-3">{metaErrorMessage}</p>}
+
+                      {metaAuthStatus === 'connected' && (
+                        <div className="mt-5 space-y-4">
+                          <input
+                            type="text"
+                            placeholder="Search pages you manage"
+                            value={facebookPageQuery}
+                            onChange={(e) => setFacebookPageQuery(e.target.value)}
+                            className="w-full px-4 py-3 bg-gray-900 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
+                          />
+
+                          <div className="grid sm:grid-cols-2 gap-3">
+                            {filteredFacebookPages.map((page) => {
+                              const isSelected = Boolean(page.link && page.link === facebookPageUrl);
+
+                              return (
+                                <button
+                                  key={page.id}
+                                  type="button"
+                                  onClick={() => setFacebookPageUrl(page.link ?? '')}
+                                  className={`flex items-center gap-3 p-4 rounded-lg border transition-colors text-left ${
+                                    isSelected
+                                      ? 'border-indigo-500 bg-indigo-500/10'
+                                      : 'border-gray-700 hover:border-gray-600 bg-gray-900/40'
+                                  }`}
+                                >
+                                  {page.pictureUrl ? (
+                                    <img
+                                      src={page.pictureUrl}
+                                      alt={page.name}
+                                      className="w-10 h-10 rounded-lg object-cover"
+                                    />
+                                  ) : (
+                                    <div className="w-10 h-10 rounded-lg bg-gray-800 border border-gray-700" />
+                                  )}
+                                  <div className="min-w-0">
+                                    <div className="text-white font-semibold truncate">{page.name}</div>
+                                    <div className="text-gray-400 text-sm truncate">{page.link ?? 'No page URL available'}</div>
+                                  </div>
+                                </button>
+                              );
+                            })}
+
+                            {filteredFacebookPages.length === 0 && (
+                              <div className="sm:col-span-2 text-gray-400 text-sm bg-gray-900/40 border border-gray-700 rounded-lg p-4">
+                                No pages found.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Facebook Page URL</label>
+                    <input
+                      type="text"
+                      placeholder="https://facebook.com/yourpage"
+                      value={facebookPageUrl}
+                      onChange={(e) => setFacebookPageUrl(e.target.value)}
+                      className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
+                    />
+                  </div>
                 </div>
               )}
 
@@ -204,7 +499,17 @@ export function SetupMetaAdsStep({
               <p className="text-gray-300 mb-4">Do you have an Instagram page?</p>
               <div className="flex gap-4 mb-6">
                 <button
-                  onClick={() => setHasInstagramPage(true)}
+                  onClick={() => {
+                    setHasInstagramPage(true);
+                    shouldFetchInstagramAccountsRef.current = true;
+
+                    if (metaAuthStatus === 'connected' && facebookPages.length > 0) {
+                      fetchInstagramBusinessAccounts(facebookPages);
+                      return;
+                    }
+
+                    void connectMetaAccount();
+                  }}
                   className={`flex-1 px-6 py-4 rounded-lg border-2 font-semibold transition-all ${
                     hasInstagramPage === true
                       ? 'border-indigo-500 bg-indigo-500/10 text-white'
@@ -226,15 +531,106 @@ export function SetupMetaAdsStep({
               </div>
 
               {hasInstagramPage === true && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Instagram Page URL</label>
-                  <input
-                    type="text"
-                    placeholder="https://instagram.com/yourpage"
-                    value={instagramPageUrl}
-                    onChange={(e) => setInstagramPageUrl(e.target.value)}
-                    className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
-                  />
+                <div className="space-y-4">
+                  {!facebookAppId ? (
+                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4">
+                      <p className="text-amber-100 text-sm">
+                        Add a Facebook App ID (VITE_FACEBOOK_APP_ID) to enable Instagram account search via Facebook Login (permissions: instagram_basic, pages_show_list). For now, paste your Instagram URL below.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="bg-gray-800/40 border border-gray-700 rounded-lg p-5">
+                      <div className="flex items-center justify-between gap-4 flex-wrap">
+                        <div>
+                          <div className="text-white font-semibold">Find your Instagram Business Account</div>
+                          <div className="text-gray-400 text-sm">We’ll show Instagram accounts connected to your Facebook Pages.</div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (metaAuthStatus === 'connected' && facebookPages.length > 0) {
+                              fetchInstagramBusinessAccounts(facebookPages);
+                            } else {
+                              void connectMetaAccount();
+                            }
+                          }}
+                          disabled={metaAuthStatus === 'connecting' || metaConnectStatus === 'loading'}
+                          className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold disabled:opacity-50"
+                        >
+                          {metaAuthStatus === 'connecting'
+                            ? 'Connecting...'
+                            : metaAuthStatus === 'connected'
+                              ? 'Refresh accounts'
+                              : 'Connect Instagram'}
+                        </button>
+                      </div>
+
+                      {metaErrorMessage && <p className="text-red-400 text-sm mt-3">{metaErrorMessage}</p>}
+
+                      {metaAuthStatus === 'connected' && (
+                        <div className="mt-5 space-y-4">
+                          <input
+                            type="text"
+                            placeholder="Search Instagram accounts"
+                            value={instagramAccountQuery}
+                            onChange={(e) => setInstagramAccountQuery(e.target.value)}
+                            className="w-full px-4 py-3 bg-gray-900 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
+                          />
+
+                          <div className="grid sm:grid-cols-2 gap-3">
+                            {filteredInstagramAccounts.map((account) => {
+                              const url = `https://instagram.com/${account.username}`;
+                              const isSelected = url === instagramPageUrl;
+
+                              return (
+                                <button
+                                  key={account.id}
+                                  type="button"
+                                  onClick={() => setInstagramPageUrl(url)}
+                                  className={`flex items-center gap-3 p-4 rounded-lg border transition-colors text-left ${
+                                    isSelected
+                                      ? 'border-indigo-500 bg-indigo-500/10'
+                                      : 'border-gray-700 hover:border-gray-600 bg-gray-900/40'
+                                  }`}
+                                >
+                                  {account.profilePictureUrl ? (
+                                    <img
+                                      src={account.profilePictureUrl}
+                                      alt={account.username}
+                                      className="w-10 h-10 rounded-lg object-cover"
+                                    />
+                                  ) : (
+                                    <div className="w-10 h-10 rounded-lg bg-gray-800 border border-gray-700" />
+                                  )}
+                                  <div className="min-w-0">
+                                    <div className="text-white font-semibold truncate">@{account.username}</div>
+                                    <div className="text-gray-400 text-sm truncate">Connected via Facebook Page</div>
+                                  </div>
+                                </button>
+                              );
+                            })}
+
+                            {filteredInstagramAccounts.length === 0 && (
+                              <div className="sm:col-span-2 text-gray-400 text-sm bg-gray-900/40 border border-gray-700 rounded-lg p-4">
+                                No connected Instagram business accounts found.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Instagram Page URL</label>
+                    <input
+                      type="text"
+                      placeholder="https://instagram.com/yourpage"
+                      value={instagramPageUrl}
+                      onChange={(e) => setInstagramPageUrl(e.target.value)}
+                      className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
+                    />
+                  </div>
                 </div>
               )}
 

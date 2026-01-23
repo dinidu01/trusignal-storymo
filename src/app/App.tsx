@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Check, ArrowRight, TrendingUp, Clock, DollarSign, Target, X, LayoutDashboard, Megaphone, BarChart3, Plus, Lightbulb, Upload, Sparkles, Mail } from 'lucide-react';
+import { MyDataPage } from '../pages/MyDataPage';
+import { PrivacyPage } from '../pages/PrivacyPage';
 import { CreateLandingPageStep } from './wizard/steps/CreateLandingPageStep';
 import { SetupMetaAdsStep } from './wizard/steps/SetupMetaAdsStep';
 import { SetupEmailReceivingStep } from './wizard/steps/SetupEmailReceivingStep';
@@ -10,6 +12,7 @@ import { supabase } from '../lib/supabaseClient';
 export default function App() {
   const [activeQuestion, setActiveQuestion] = useState<number | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [heroIdeaText, setHeroIdeaText] = useState('');
   const [typedText, setTypedText] = useState('');
   const [phraseIndex, setPhraseIndex] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -25,6 +28,21 @@ export default function App() {
   const [instagramPageUrl, setInstagramPageUrl] = useState('');
   const [wantsEmailReceiving, setWantsEmailReceiving] = useState<boolean | null>(null);
   const [receivingEmail, setReceivingEmail] = useState('');
+
+  const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
+
+  useEffect(() => {
+    const handlePopState = () => setCurrentPath(window.location.pathname);
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigate = (path: string) => {
+    if (path === currentPath) return;
+    window.history.pushState({}, '', path);
+    setCurrentPath(path);
+    window.scrollTo(0, 0);
+  };
 
   // Wizard sub-steps
   const [landingSubStep, setLandingSubStep] = useState(1);
@@ -87,6 +105,8 @@ export default function App() {
   }, [typedText, isDeleting, phraseIndex]);
 
   useEffect(() => {
+    if (!supabase) return;
+
     const loadSession = async () => {
       const { data } = await supabase.auth.getSession();
       setIsLoggedIn(!!data.session);
@@ -106,7 +126,10 @@ export default function App() {
   };
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
+
     setIsLoggedIn(false);
   };
 
@@ -116,6 +139,14 @@ export default function App() {
     { id: 'email' as const, icon: Mail, label: 'Setup Email Receiving', optional: true },
     { id: 'results' as const, icon: BarChart3, label: 'Analyze Results' },
   ];
+
+  if (currentPath === '/mydata') {
+    return <MyDataPage navigate={navigate} />;
+  }
+
+  if (currentPath === '/privacy') {
+    return <PrivacyPage navigate={navigate} />;
+  }
 
   if (isLoggedIn) {
     return (
@@ -326,10 +357,10 @@ export default function App() {
             <div className="relative w-full max-w-3xl">
               <input
                 type="text"
-                placeholder="What do you want to make?"
+                placeholder={typedText.length > 0 ? typedText : 'What do you want to make?'}
                 className="w-full px-8 py-6 pr-24 text-lg bg-gray-900 border-2 border-gray-700 text-white placeholder-gray-500 rounded-2xl focus:border-indigo-500 focus:outline-none transition-colors"
-                value={typedText}
-                onChange={(e) => setTypedText(e.target.value)}
+                value={heroIdeaText}
+                onChange={(e) => setHeroIdeaText(e.target.value)}
               />
               <button className="absolute right-2 top-1/2 -translate-y-1/2 p-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-600/25" onClick={() => setShowAuthModal(true)}>
                 <ArrowRight className="w-6 h-6" />
@@ -586,7 +617,7 @@ export default function App() {
       <footer className="bg-black border-t border-gray-800">
         <div className="max-w-[1200px] mx-auto px-6 py-8">
           <div className="flex items-center justify-center gap-6 text-gray-400">
-            <a href="#" className="hover:text-indigo-400 transition-colors">Privacy</a>
+            <button type="button" onClick={() => navigate('/privacy')} className="hover:text-indigo-400 transition-colors">Privacy</button>
             <span className="text-gray-700">·</span>
             <a href="#" className="hover:text-indigo-400 transition-colors">Terms</a>
             <span className="text-gray-700">·</span>
