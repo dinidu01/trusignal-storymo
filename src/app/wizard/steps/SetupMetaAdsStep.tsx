@@ -1445,11 +1445,11 @@ export function SetupMetaAdsStep({
 
       {showLaunchReview && (
         <div
-          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+          className="fixed inset-0 z-[120] flex items-start sm:items-center justify-center bg-black/80 backdrop-blur-sm p-4 sm:p-6"
           onClick={() => setShowLaunchReview(false)}
         >
           <div
-            className="bg-gray-900 rounded-2xl p-8 w-full max-w-3xl border border-gray-800 shadow-2xl"
+            className="bg-gray-900 rounded-2xl p-6 sm:p-8 w-full max-w-3xl border border-gray-800 shadow-2xl max-h-[90vh] overflow-y-auto"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-6">
@@ -1462,7 +1462,7 @@ export function SetupMetaAdsStep({
               </button>
             </div>
 
-            <div className="grid md:grid-cols-2 gap-6">
+            <div className="grid md:grid-cols-2 gap-4 sm:gap-6">
               <div className="bg-gray-800 rounded-xl border border-gray-700 p-5">
                 <h4 className="text-sm font-medium text-gray-400 mb-4">Ad Preview (1:1 Square)</h4>
                 <div className="bg-gray-900 rounded-lg overflow-hidden border border-gray-700">
@@ -1508,17 +1508,17 @@ export function SetupMetaAdsStep({
               </div>
             </div>
 
-            <div className="mt-8 flex justify-end gap-3">
+            <div className="mt-8 flex flex-col-reverse sm:flex-row justify-end gap-3">
               <button
                 onClick={() => setShowLaunchReview(false)}
-                className="px-6 py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors font-semibold"
+                className="w-full sm:w-auto px-6 py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors font-semibold"
               >
                 Back
               </button>
               <button
                 onClick={handleLaunchPayment}
                 disabled={isLaunchingPayment}
-                className="px-8 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold disabled:opacity-50"
+                className="w-full sm:w-auto px-8 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold disabled:opacity-50"
               >
                 {isLaunchingPayment ? 'Redirecting...' : 'Confirm & Launch'}
               </button>

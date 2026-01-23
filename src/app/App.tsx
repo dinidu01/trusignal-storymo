@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Check, ArrowRight, TrendingUp, Clock, DollarSign, Target, X, LayoutDashboard, Megaphone, BarChart3, Plus, Lightbulb, Upload, Sparkles, Mail, Settings } from 'lucide-react';
+import { Check, ArrowRight, TrendingUp, Clock, DollarSign, Target, X, LayoutDashboard, Megaphone, BarChart3, Plus, Lightbulb, Upload, Sparkles, Mail, Settings, ChevronLeft, ChevronRight } from 'lucide-react';
 import { MyDataPage } from '../pages/MyDataPage';
 import { PrivacyPage } from '../pages/PrivacyPage';
 import { CreateLandingPageStep } from './wizard/steps/CreateLandingPageStep';
@@ -19,6 +19,7 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userProfile, setUserProfile] = useState<{ email?: string; name?: string } | null>(null);
   const [showAccountModal, setShowAccountModal] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [activeStep, setActiveStep] = useState<'landing' | 'domain' | 'ads' | 'email' | 'results'>('landing');
   const [showNewIdeaInput, setShowNewIdeaInput] = useState(false);
   const [ideaInput, setIdeaInput] = useState('');
@@ -165,22 +166,56 @@ export default function App() {
 
   if (isLoggedIn) {
     return (
-      <div className="min-h-screen bg-black flex">
+        <div className="min-h-screen bg-black flex">
         {/* Sidebar */}
-        <div className="w-72 bg-gray-900 border-r border-gray-800 flex flex-col">
+        <div
+          className={`bg-gray-900 border-r border-gray-800 flex flex-col transition-all duration-200 ${
+            isSidebarCollapsed ? 'w-20' : 'w-72'
+          }`}
+        >
           <div className="p-6 border-b border-gray-800">
-            <div className="text-2xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
-              TruSignal
+            <div
+              className={`flex items-center ${
+                isSidebarCollapsed ? 'justify-center' : 'justify-between'
+              }`}
+            >
+              <div className="text-2xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
+                {isSidebarCollapsed ? 'TS' : 'TruSignal'}
+              </div>
+              {!isSidebarCollapsed && (
+                <button
+                  type="button"
+                  onClick={() => setIsSidebarCollapsed(true)}
+                  className="p-2 rounded-lg border border-gray-700 text-gray-300 hover:text-white hover:border-gray-600 transition-colors"
+                  aria-label="Collapse sidebar"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+              )}
             </div>
+            {isSidebarCollapsed && (
+              <button
+                type="button"
+                onClick={() => setIsSidebarCollapsed(false)}
+                className="mt-4 w-full flex items-center justify-center p-2 rounded-lg border border-gray-700 text-gray-300 hover:text-white hover:border-gray-600 transition-colors"
+                aria-label="Expand sidebar"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            )}
           </div>
 
           <div className="flex-1 p-4">
             <button
               onClick={() => setShowNewIdeaInput(true)}
-              className="w-full px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium flex items-center justify-center gap-2 mb-6"
+              className={`w-full rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors font-medium flex items-center justify-center gap-2 mb-6 ${
+                isSidebarCollapsed ? 'px-2 py-3' : 'px-4 py-3'
+              }`}
+              aria-label="New idea"
+              title="New Idea"
             >
               <Plus className="w-5 h-5" />
-              New Idea
+              {!isSidebarCollapsed && 'New Idea'}
             </button>
 
             <div className="space-y-2">
@@ -188,36 +223,46 @@ export default function App() {
                 <button
                   key={step.id}
                   onClick={() => setActiveStep(step.id)}
-                  className={`w-full px-4 py-3 rounded-lg text-left flex items-center gap-3 transition-colors ${
+                  className={`w-full rounded-lg flex items-center gap-3 transition-colors ${
                     activeStep === step.id
                       ? 'bg-indigo-600 text-white'
                       : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-                  }`}
+                  } ${isSidebarCollapsed ? 'px-2 py-3 justify-center' : 'px-4 py-3 text-left'}`}
+                  aria-label={`Step ${index + 1}: ${step.label}`}
+                  title={`Step ${index + 1}: ${step.label}`}
                 >
                   <step.icon className="w-5 h-5" />
-                  <div>
-                    <div className="text-xs text-gray-500">Step {index + 1}{step.optional ? ' (Optional)' : ''}</div>
-                    <div className="font-medium">{step.label}</div>
-                  </div>
+                  {!isSidebarCollapsed && (
+                    <div>
+                      <div className="text-xs text-gray-500">
+                        Step {index + 1}
+                        {step.optional ? ' (Optional)' : ''}
+                      </div>
+                      <div className="font-medium">{step.label}</div>
+                    </div>
+                  )}
                 </button>
               ))}
             </div>
           </div>
 
           <div className="p-4 border-t border-gray-800">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-sm font-semibold text-white truncate">
-                  {userProfile?.name ?? 'Signed in'}
+            <div className={`flex items-center gap-3 ${isSidebarCollapsed ? 'justify-center' : 'justify-between'}`}>
+              {!isSidebarCollapsed && (
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-white truncate">
+                    {userProfile?.name ?? 'Signed in'}
+                  </div>
+                  <div className="text-xs text-gray-400 truncate">
+                    {userProfile?.email ?? 'No email'}
+                  </div>
                 </div>
-                <div className="text-xs text-gray-400 truncate">
-                  {userProfile?.email ?? 'No email'}
-                </div>
-              </div>
+              )}
               <button
                 onClick={() => setShowAccountModal(true)}
                 className="p-2 rounded-lg border border-gray-700 text-gray-300 hover:text-white hover:border-gray-600 transition-colors"
                 aria-label="Account settings"
+                title="Account settings"
               >
                 <Settings className="w-4 h-4" />
               </button>
@@ -586,15 +631,15 @@ export default function App() {
               <div className="text-center mb-8">
                 <h3 className="text-2xl font-bold text-white mb-3">Starter</h3>
                 <div className="flex items-baseline justify-center gap-2">
-                  <span className="text-6xl font-bold text-white">$49</span>
+                  <span className="text-6xl font-bold text-white">$49/month</span>
                 </div>
               </div>
               <div className="space-y-4 mb-8">
                 {[
-                  '72-hour live validation test',
-                  '$25 ad spend included',
-                  'Landing page + waitlist',
-                  'Results dashboard'
+                  'Unlimited business idea validations',
+                  'Complete business in a box',
+                  'Custom Landing page, Website domain, + waitlist',
+                  'Validation dashboard'
                 ].map((item, index) => (
                   <div key={index} className="flex items-center gap-3">
                     <div className="w-5 h-5 rounded-full bg-indigo-600/20 flex items-center justify-center flex-shrink-0">
