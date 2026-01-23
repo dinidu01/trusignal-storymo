@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Check, ArrowRight, TrendingUp, Clock, DollarSign, Target, X, LayoutDashboard, Megaphone, BarChart3, Plus, Lightbulb, Upload, Sparkles, Mail } from 'lucide-react';
+import { Check, ArrowRight, TrendingUp, Clock, DollarSign, Target, X, LayoutDashboard, Megaphone, BarChart3, Plus, Lightbulb, Upload, Sparkles, Mail, Settings } from 'lucide-react';
 import { MyDataPage } from '../pages/MyDataPage';
 import { PrivacyPage } from '../pages/PrivacyPage';
 import { CreateLandingPageStep } from './wizard/steps/CreateLandingPageStep';
@@ -17,6 +17,8 @@ export default function App() {
   const [phraseIndex, setPhraseIndex] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [userProfile, setUserProfile] = useState<{ email?: string; name?: string } | null>(null);
+  const [showAccountModal, setShowAccountModal] = useState(false);
   const [activeStep, setActiveStep] = useState<'landing' | 'domain' | 'ads' | 'email' | 'results'>('landing');
   const [showNewIdeaInput, setShowNewIdeaInput] = useState(false);
   const [ideaInput, setIdeaInput] = useState('');
@@ -65,8 +67,8 @@ export default function App() {
   const [adAgeMin, setAdAgeMin] = useState(18);
   const [adAgeMax, setAdAgeMax] = useState(65);
   const [adCountries, setAdCountries] = useState<string[]>([]);
-  const [adBudgetPerDay, setAdBudgetPerDay] = useState<10 | 25 | 50 | null>(null);
-  const [adDurationDays, setAdDurationDays] = useState<3 | 7 | 10 | null>(null);
+  const [adBudgetPerDay, setAdBudgetPerDay] = useState<10 | 25 | 50 | null>(25);
+  const [adDurationDays, setAdDurationDays] = useState<3 | 7 | 10 | null>(7);
 
   const phrases = [
     "Validate a Bakery in my town...",
@@ -105,17 +107,30 @@ export default function App() {
   }, [typedText, isDeleting, phraseIndex]);
 
   useEffect(() => {
-    if (!supabase) return;
-
     const loadSession = async () => {
       const { data } = await supabase.auth.getSession();
-      setIsLoggedIn(!!data.session);
+      const session = data.session;
+      setIsLoggedIn(!!session);
+      if (session?.user) {
+        setUserProfile({
+          email: session.user.email ?? undefined,
+          name: session.user.user_metadata?.full_name ?? session.user.user_metadata?.name ?? undefined,
+        });
+      }
     };
 
     loadSession();
 
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
       setIsLoggedIn(!!session);
+      if (session?.user) {
+        setUserProfile({
+          email: session.user.email ?? undefined,
+          name: session.user.user_metadata?.full_name ?? session.user.user_metadata?.name ?? undefined,
+        });
+      } else {
+        setUserProfile(null);
+      }
     });
 
     return () => data.subscription.unsubscribe();
@@ -190,12 +205,23 @@ export default function App() {
           </div>
 
           <div className="p-4 border-t border-gray-800">
-            <button
-              onClick={handleSignOut}
-              className="w-full px-4 py-2 text-gray-400 hover:text-white transition-colors text-sm"
-            >
-              Sign Out
-            </button>
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-white truncate">
+                  {userProfile?.name ?? 'Signed in'}
+                </div>
+                <div className="text-xs text-gray-400 truncate">
+                  {userProfile?.email ?? 'No email'}
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAccountModal(true)}
+                className="p-2 rounded-lg border border-gray-700 text-gray-300 hover:text-white hover:border-gray-600 transition-colors"
+                aria-label="Account settings"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -247,6 +273,10 @@ export default function App() {
                 setAdDescription={setAdDescription}
                 adCta={adCta}
                 setAdCta={setAdCta}
+                userEmail={userProfile?.email}
+                ideaDescription={ideaDescription}
+                targetAudience={targetAudience}
+                problemSolved={problemSolved}
                 adAgeMin={adAgeMin}
                 setAdAgeMin={setAdAgeMin}
                 adAgeMax={adAgeMax}
@@ -323,6 +353,40 @@ export default function App() {
                   </button>
                 ))}
               </div>
+            </div>
+          </div>
+        )}
+
+        {showAccountModal && (
+          <div
+            className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+            onClick={() => setShowAccountModal(false)}
+          >
+            <div
+              className="bg-gray-900 rounded-2xl p-8 w-full max-w-sm border border-gray-800 shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-bold text-white">Account</h2>
+                <button
+                  onClick={() => setShowAccountModal(false)}
+                  className="text-gray-400 hover:text-white transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="mb-6">
+                <div className="text-sm font-semibold text-white">
+                  {userProfile?.name ?? 'Signed in'}
+                </div>
+                <div className="text-xs text-gray-400">{userProfile?.email ?? 'No email'}</div>
+              </div>
+              <button
+                onClick={handleSignOut}
+                className="w-full px-4 py-2 rounded-lg bg-gray-800 text-white hover:bg-gray-700 transition-colors font-semibold"
+              >
+                Sign Out
+              </button>
             </div>
           </div>
         )}

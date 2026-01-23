@@ -172,9 +172,9 @@ Deno.serve(async (req) => {
         },
         { role: "user", content: prompt },
       ],
-      response_format: {
-        type: "json_schema",
-        json_schema: {
+      text: {
+        format: {
+          type: "json_schema",
           name: "audience_copy",
           strict: true,
           schema,

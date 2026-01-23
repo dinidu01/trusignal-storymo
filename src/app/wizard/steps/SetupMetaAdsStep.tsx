@@ -1,5 +1,6 @@
-import { useMemo, useRef, useState } from 'react';
-import { Check, Lightbulb, Upload, Sparkles } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Check, ChevronDown, Lightbulb, LogOut, Upload, Sparkles, Users, Wallet, X } from 'lucide-react';
+import { supabase } from '../../../lib/supabaseClient';
 
 type SetupMetaAdsStepProps = {
   adsSubStep: number;
@@ -22,6 +23,10 @@ type SetupMetaAdsStepProps = {
   setAdDescription: (value: string) => void;
   adCta: string;
   setAdCta: (value: string) => void;
+  userEmail?: string;
+  ideaDescription: string;
+  targetAudience: string;
+  problemSolved: string;
   adAgeMin: number;
   setAdAgeMin: (value: number) => void;
   adAgeMax: number;
@@ -43,6 +48,7 @@ declare global {
         callback: (response: { status?: string; authResponse?: { accessToken?: string } }) => void,
         options?: { scope?: string }
       ) => void;
+      logout: (callback: (response: { status?: string }) => void) => void;
       api: (
         path: string,
         method: 'GET' | 'POST',
@@ -59,6 +65,11 @@ type FacebookPage = {
   name: string;
   link?: string;
   pictureUrl?: string;
+  location?: {
+    city?: string;
+    state?: string;
+    country?: string;
+  };
 };
 
 type InstagramBusinessAccount = {
@@ -66,6 +77,11 @@ type InstagramBusinessAccount = {
   username: string;
   profilePictureUrl?: string;
   connectedFacebookPageId: string;
+};
+
+type FacebookUserProfile = {
+  name: string;
+  pictureUrl?: string;
 };
 
 export function SetupMetaAdsStep({
@@ -89,6 +105,10 @@ export function SetupMetaAdsStep({
   setAdDescription,
   adCta,
   setAdCta,
+  userEmail,
+  ideaDescription,
+  targetAudience,
+  problemSolved,
   adAgeMin,
   setAdAgeMin,
   adAgeMax,
@@ -107,10 +127,25 @@ export function SetupMetaAdsStep({
   const [metaAuthStatus, setMetaAuthStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
   const [metaErrorMessage, setMetaErrorMessage] = useState<string | null>(null);
 
+  const [facebookUserProfile, setFacebookUserProfile] = useState<FacebookUserProfile | null>(null);
+  const [showMetaAccountMenu, setShowMetaAccountMenu] = useState(false);
+
   const [facebookPages, setFacebookPages] = useState<FacebookPage[]>([]);
   const [instagramBusinessAccounts, setInstagramBusinessAccounts] = useState<InstagramBusinessAccount[]>([]);
   const [facebookPageQuery, setFacebookPageQuery] = useState('');
   const [instagramAccountQuery, setInstagramAccountQuery] = useState('');
+  const [isInstagramSkipped, setIsInstagramSkipped] = useState(false);
+  const [headlineOptions, setHeadlineOptions] = useState<string[]>([]);
+  const [descriptionOptions, setDescriptionOptions] = useState<string[]>([]);
+  const [headlineMode, setHeadlineMode] = useState<'preset' | 'custom'>('preset');
+  const [descriptionMode, setDescriptionMode] = useState<'preset' | 'custom'>('preset');
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+  const [moreCountryQuery, setMoreCountryQuery] = useState('');
+  const [showLaunchReview, setShowLaunchReview] = useState(false);
+  const [isLaunchingPayment, setIsLaunchingPayment] = useState(false);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
 
   const sdkLoadPromiseRef = useRef<Promise<void> | null>(null);
   const shouldFetchInstagramAccountsRef = useRef(false);
@@ -175,17 +210,19 @@ export function SetupMetaAdsStep({
     return Boolean(window.FB);
   };
 
-  const connectMetaAccount = async () => {
+  const connectMetaAccount = async (scopeOverride?: string) => {
     const sdkReady = await ensureFacebookSdkLoaded();
     if (!sdkReady || !window.FB) return;
 
     setMetaAuthStatus('connecting');
     setMetaErrorMessage(null);
+    setShowMetaAccountMenu(false);
 
     window.FB.login(
       (response) => {
         if (response?.authResponse?.accessToken) {
           setMetaAuthStatus('connected');
+          fetchFacebookUserProfile();
           fetchManagedFacebookPages();
           return;
         }
@@ -194,9 +231,50 @@ export function SetupMetaAdsStep({
         setMetaErrorMessage('Login was cancelled or did not return an access token.');
       },
       {
-        scope: 'public_profile,email,pages_show_list,pages_read_engagement,instagram_basic',
+        scope: scopeOverride ?? 'public_profile,pages_show_list,instagram_basic',
       }
     );
+  };
+
+  const connectInstagramAccount = async () => {
+    await connectMetaAccount('public_profile,pages_show_list,instagram_basic');
+  };
+
+  const fetchFacebookUserProfile = () => {
+    if (!window.FB) return;
+
+    window.FB.api(
+      '/me',
+      'GET',
+      {
+        fields: 'name,picture{url}',
+      },
+      (response) => {
+        if (!response?.name) {
+          return;
+        }
+
+        setFacebookUserProfile({
+          name: String(response.name),
+          pictureUrl: response?.picture?.data?.url ? String(response.picture.data.url) : undefined,
+        });
+      }
+    );
+  };
+
+  const signOutMetaAccount = () => {
+    if (!window.FB) return;
+
+    window.FB.logout(() => {
+      setMetaAuthStatus('idle');
+      setFacebookUserProfile(null);
+      setFacebookPages([]);
+      setInstagramBusinessAccounts([]);
+      setFacebookPageQuery('');
+      setInstagramAccountQuery('');
+      setShowMetaAccountMenu(false);
+      setMetaErrorMessage(null);
+    });
   };
 
   const fetchManagedFacebookPages = () => {
@@ -276,15 +354,45 @@ export function SetupMetaAdsStep({
   }, [instagramBusinessAccounts, instagramAccountQuery]);
 
   const availableCountries = [
-    'United States',
-    'Canada',
-    'United Kingdom',
-    'Australia',
-    'Germany',
-    'France',
-    'India',
-    'Sri Lanka',
+    { name: 'United States', flag: '🇺🇸' },
+    { name: 'Canada', flag: '🇨🇦' },
+    { name: 'United Kingdom', flag: '🇬🇧' },
+    { name: 'Australia', flag: '🇦🇺' },
+    { name: 'Germany', flag: '🇩🇪' },
+    { name: 'France', flag: '🇫🇷' },
+    { name: 'India', flag: '🇮🇳' },
+    { name: 'Sri Lanka', flag: '🇱🇰' },
   ];
+
+  const additionalCountries = [
+    'Brazil',
+    'Mexico',
+    'Spain',
+    'Italy',
+    'Netherlands',
+    'Sweden',
+    'Norway',
+    'Denmark',
+    'Finland',
+    'Ireland',
+    'New Zealand',
+    'Singapore',
+    'United Arab Emirates',
+    'South Africa',
+    'Japan',
+    'South Korea',
+  ];
+
+  const handleAddCountry = () => {
+    const normalized = moreCountryQuery.trim();
+    if (!normalized) return;
+    if (adCountries.includes(normalized)) {
+      setMoreCountryQuery('');
+      return;
+    }
+    setAdCountries([...adCountries, normalized]);
+    setMoreCountryQuery('');
+  };
 
   const toggleCountry = (country: string) => {
     if (adCountries.includes(country)) {
@@ -298,6 +406,129 @@ export function SetupMetaAdsStep({
   const canLaunch =
     adBudgetPerDay !== null && adDurationDays !== null && adCountries.length > 0 && adAgeMin >= 13 && adAgeMax >= adAgeMin;
 
+  const totalBudget =
+    adBudgetPerDay !== null && adDurationDays !== null ? adBudgetPerDay * adDurationDays : null;
+
+  const handleLaunchPayment = async () => {
+    if (adBudgetPerDay === null || adDurationDays === null) return;
+
+    setIsLaunchingPayment(true);
+    setPaymentError(null);
+
+    try {
+      let email = userEmail;
+      if (!email) {
+        const { data: userData } = await supabase.auth.getUser();
+        email = userData?.user?.email ?? undefined;
+      }
+
+      const { data, error } = await supabase.functions.invoke('create-checkout-session', {
+        body: {
+          pricePerDay: adBudgetPerDay,
+          durationDays: adDurationDays,
+          customerEmail: email,
+        },
+      });
+
+      if (error || !data?.url) {
+        throw error ?? new Error('Missing checkout URL.');
+      }
+
+      window.location.href = data.url;
+    } catch (_error) {
+      setPaymentError('Unable to start checkout. Please try again.');
+      setIsLaunchingPayment(false);
+    }
+  };
+
+  useEffect(() => {
+    const stored = localStorage.getItem('trusignal.analyzeIdea');
+    if (!stored) return;
+
+    try {
+      const parsed = JSON.parse(stored) as {
+        segments?: Array<{
+          meta_ad_headlines?: string[];
+          meta_ad_descriptions?: string[];
+        }>;
+      };
+
+      const firstSegment = parsed.segments?.[0];
+      const headlines = Array.isArray(firstSegment?.meta_ad_headlines)
+        ? firstSegment.meta_ad_headlines.filter(Boolean).slice(0, 3)
+        : [];
+      const descriptions = Array.isArray(firstSegment?.meta_ad_descriptions)
+        ? firstSegment.meta_ad_descriptions.filter(Boolean).slice(0, 3)
+        : [];
+
+      if (headlines.length > 0) {
+        setHeadlineOptions(headlines);
+        if (!adHeadline) {
+          setAdHeadline(headlines[0]);
+          setHeadlineMode('preset');
+        }
+      }
+
+      if (descriptions.length > 0) {
+        setDescriptionOptions(descriptions);
+        if (!adDescription) {
+          setAdDescription(descriptions[0]);
+          setDescriptionMode('preset');
+        }
+      }
+    } catch (_error) {
+      // Ignore stored data errors.
+    }
+  }, [adHeadline, adDescription, setAdDescription, setAdHeadline]);
+
+  useEffect(() => {
+    const storedImage = localStorage.getItem('trusignal.adImage');
+    if (storedImage && !adImageUrl) {
+      setAdImageMethod('ai');
+      setAdImageUrl(storedImage);
+    }
+  }, [adImageUrl, setAdImageMethod, setAdImageUrl]);
+
+  useEffect(() => {
+    if (!adImageUrl) return;
+    localStorage.setItem('trusignal.adImage', adImageUrl);
+  }, [adImageUrl]);
+
+  const handleGenerateImage = async () => {
+    if (!ideaDescription || !targetAudience || !problemSolved) {
+      setImageError('Provide idea, audience, and problem details first.');
+      return;
+    }
+
+    setAdImageMethod('ai');
+    setIsGeneratingImage(true);
+    setImageError(null);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-ad-image', {
+        body: {
+          idea: ideaDescription,
+          audience: targetAudience,
+          problem: problemSolved,
+        },
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      if (data?.image_data_url) {
+        setAdImageUrl(data.image_data_url);
+      } else {
+        throw new Error('Missing image data.');
+      }
+    } catch (_error) {
+      setImageError('Unable to generate an image right now. Please try again.');
+    } finally {
+      setIsGeneratingImage(false);
+    }
+  };
+
   return (
     <div>
       <h1 className="text-4xl font-bold text-white mb-6 text-center">Setup Meta Ads</h1>
@@ -310,7 +541,7 @@ export function SetupMetaAdsStep({
 
       {/* Progress Indicator */}
       <div className="flex items-center justify-center gap-2 mb-8">
-        {[1, 2, 3].map((step) => (
+        {[1, 2, 3, 4].map((step) => (
           <div key={step} className="flex items-center">
             <div
               className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${
@@ -330,7 +561,7 @@ export function SetupMetaAdsStep({
         ))}
       </div>
 
-      {/* Sub-step 1: Connect Pages */}
+      {/* Sub-step 1: Connect Facebook */}
       {adsSubStep === 1 && (
         <div>
           <h2 className="text-3xl font-bold text-white mb-4 text-center">Connect your social pages</h2>
@@ -393,24 +624,61 @@ export function SetupMetaAdsStep({
                           <div className="text-white font-semibold">Find your Facebook Page</div>
                           <div className="text-gray-400 text-sm">Connect to list pages you manage.</div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => void connectMetaAccount()}
-                          disabled={metaAuthStatus === 'connecting' || metaConnectStatus === 'loading'}
-                          className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold disabled:opacity-50"
-                        >
-                          {metaAuthStatus === 'connecting'
-                            ? 'Connecting...'
-                            : metaAuthStatus === 'connected'
-                              ? 'Re-connect'
-                              : 'Connect Facebook'}
-                        </button>
+                        {metaAuthStatus !== 'connected' && (
+                          <button
+                            type="button"
+                            onClick={() => void connectMetaAccount()}
+                            disabled={metaAuthStatus === 'connecting' || metaConnectStatus === 'loading'}
+                            className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold disabled:opacity-50"
+                          >
+                            {metaAuthStatus === 'connecting' ? 'Connecting...' : 'Connect Facebook'}
+                          </button>
+                        )}
                       </div>
 
                       {metaErrorMessage && <p className="text-red-400 text-sm mt-3">{metaErrorMessage}</p>}
 
                       {metaAuthStatus === 'connected' && (
                         <div className="mt-5 space-y-4">
+                          <div className="flex items-center justify-end">
+                            <div className="relative">
+                              <button
+                                type="button"
+                                onClick={() => setShowMetaAccountMenu((prev) => !prev)}
+                                className="flex items-center gap-3 px-3 py-2 rounded-lg border border-gray-700 text-gray-200 hover:border-gray-600 transition-colors"
+                              >
+                                {facebookUserProfile?.pictureUrl ? (
+                                  <img
+                                    src={facebookUserProfile.pictureUrl}
+                                    alt={facebookUserProfile.name}
+                                    className="w-8 h-8 rounded-full object-cover border border-gray-700"
+                                  />
+                                ) : (
+                                  <div className="w-8 h-8 rounded-full bg-gray-800 border border-gray-700" />
+                                )}
+                                <div className="text-left">
+                                  <div className="text-[11px] text-gray-400">Signed in as</div>
+                                  <div className="text-white font-semibold">
+                                    {facebookUserProfile?.name ?? 'Facebook user'}
+                                  </div>
+                                </div>
+                                <ChevronDown className="w-4 h-4 text-gray-300" />
+                              </button>
+                              {showMetaAccountMenu && (
+                                <div className="absolute right-0 mt-2 w-44 bg-gray-900 border border-gray-800 rounded-lg shadow-xl z-10">
+                                  <button
+                                    type="button"
+                                    onClick={signOutMetaAccount}
+                                    className="w-full px-4 py-2 text-left text-sm text-gray-200 hover:bg-gray-800 flex items-center gap-2"
+                                  >
+                                    <LogOut className="w-4 h-4" />
+                                    Sign out
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
                           <input
                             type="text"
                             placeholder="Search pages you manage"
@@ -424,16 +692,21 @@ export function SetupMetaAdsStep({
                               const isSelected = Boolean(page.link && page.link === facebookPageUrl);
 
                               return (
-                                <button
+                                <label
                                   key={page.id}
-                                  type="button"
-                                  onClick={() => setFacebookPageUrl(page.link ?? '')}
-                                  className={`flex items-center gap-3 p-4 rounded-lg border transition-colors text-left ${
+                                  className={`flex items-center gap-3 p-4 rounded-lg border transition-colors text-left cursor-pointer ${
                                     isSelected
                                       ? 'border-indigo-500 bg-indigo-500/10'
                                       : 'border-gray-700 hover:border-gray-600 bg-gray-900/40'
                                   }`}
                                 >
+                                  <input
+                                    type="radio"
+                                    name="facebook-page"
+                                    checked={isSelected}
+                                    onChange={() => setFacebookPageUrl(page.link ?? '')}
+                                    className="h-4 w-4 text-indigo-500"
+                                  />
                                   {page.pictureUrl ? (
                                     <img
                                       src={page.pictureUrl}
@@ -446,8 +719,15 @@ export function SetupMetaAdsStep({
                                   <div className="min-w-0">
                                     <div className="text-white font-semibold truncate">{page.name}</div>
                                     <div className="text-gray-400 text-sm truncate">{page.link ?? 'No page URL available'}</div>
+                                    {page.location && (
+                                      <div className="text-gray-500 text-xs truncate">
+                                        {[page.location.city, page.location.state, page.location.country]
+                                          .filter(Boolean)
+                                          .join(', ')}
+                                      </div>
+                                    )}
                                   </div>
-                                </button>
+                                </label>
                               );
                             })}
 
@@ -462,16 +742,6 @@ export function SetupMetaAdsStep({
                     </div>
                   )}
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">Facebook Page URL</label>
-                    <input
-                      type="text"
-                      placeholder="https://facebook.com/yourpage"
-                      value={facebookPageUrl}
-                      onChange={(e) => setFacebookPageUrl(e.target.value)}
-                      className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
-                    />
-                  </div>
                 </div>
               )}
 
@@ -482,177 +752,18 @@ export function SetupMetaAdsStep({
               )}
             </div>
 
-            {/* Instagram Page Section */}
-            <div className="bg-gray-900 rounded-xl p-8 border border-gray-800">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-purple-600 via-pink-600 to-orange-500 flex items-center justify-center flex-shrink-0">
-                  <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" />
-                  </svg>
-                </div>
-                <div>
-                  <h3 className="text-2xl font-bold text-white">Instagram Page</h3>
-                  <p className="text-gray-400 text-sm">Connect your Instagram business account</p>
-                </div>
-              </div>
-
-              <p className="text-gray-300 mb-4">Do you have an Instagram page?</p>
-              <div className="flex gap-4 mb-6">
-                <button
-                  onClick={() => {
-                    setHasInstagramPage(true);
-                    shouldFetchInstagramAccountsRef.current = true;
-
-                    if (metaAuthStatus === 'connected' && facebookPages.length > 0) {
-                      fetchInstagramBusinessAccounts(facebookPages);
-                      return;
-                    }
-
-                    void connectMetaAccount();
-                  }}
-                  className={`flex-1 px-6 py-4 rounded-lg border-2 font-semibold transition-all ${
-                    hasInstagramPage === true
-                      ? 'border-indigo-500 bg-indigo-500/10 text-white'
-                      : 'border-gray-700 text-gray-400 hover:border-gray-600'
-                  }`}
-                >
-                  Yes, I have one
-                </button>
-                <button
-                  onClick={() => setHasInstagramPage(false)}
-                  className={`flex-1 px-6 py-4 rounded-lg border-2 font-semibold transition-all ${
-                    hasInstagramPage === false
-                      ? 'border-indigo-500 bg-indigo-500/10 text-white'
-                      : 'border-gray-700 text-gray-400 hover:border-gray-600'
-                  }`}
-                >
-                  No, create one for me
-                </button>
-              </div>
-
-              {hasInstagramPage === true && (
-                <div className="space-y-4">
-                  {!facebookAppId ? (
-                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4">
-                      <p className="text-amber-100 text-sm">
-                        Add a Facebook App ID (VITE_FACEBOOK_APP_ID) to enable Instagram account search via Facebook Login (permissions: instagram_basic, pages_show_list). For now, paste your Instagram URL below.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="bg-gray-800/40 border border-gray-700 rounded-lg p-5">
-                      <div className="flex items-center justify-between gap-4 flex-wrap">
-                        <div>
-                          <div className="text-white font-semibold">Find your Instagram Business Account</div>
-                          <div className="text-gray-400 text-sm">We’ll show Instagram accounts connected to your Facebook Pages.</div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (metaAuthStatus === 'connected' && facebookPages.length > 0) {
-                              fetchInstagramBusinessAccounts(facebookPages);
-                            } else {
-                              void connectMetaAccount();
-                            }
-                          }}
-                          disabled={metaAuthStatus === 'connecting' || metaConnectStatus === 'loading'}
-                          className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold disabled:opacity-50"
-                        >
-                          {metaAuthStatus === 'connecting'
-                            ? 'Connecting...'
-                            : metaAuthStatus === 'connected'
-                              ? 'Refresh accounts'
-                              : 'Connect Instagram'}
-                        </button>
-                      </div>
-
-                      {metaErrorMessage && <p className="text-red-400 text-sm mt-3">{metaErrorMessage}</p>}
-
-                      {metaAuthStatus === 'connected' && (
-                        <div className="mt-5 space-y-4">
-                          <input
-                            type="text"
-                            placeholder="Search Instagram accounts"
-                            value={instagramAccountQuery}
-                            onChange={(e) => setInstagramAccountQuery(e.target.value)}
-                            className="w-full px-4 py-3 bg-gray-900 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
-                          />
-
-                          <div className="grid sm:grid-cols-2 gap-3">
-                            {filteredInstagramAccounts.map((account) => {
-                              const url = `https://instagram.com/${account.username}`;
-                              const isSelected = url === instagramPageUrl;
-
-                              return (
-                                <button
-                                  key={account.id}
-                                  type="button"
-                                  onClick={() => setInstagramPageUrl(url)}
-                                  className={`flex items-center gap-3 p-4 rounded-lg border transition-colors text-left ${
-                                    isSelected
-                                      ? 'border-indigo-500 bg-indigo-500/10'
-                                      : 'border-gray-700 hover:border-gray-600 bg-gray-900/40'
-                                  }`}
-                                >
-                                  {account.profilePictureUrl ? (
-                                    <img
-                                      src={account.profilePictureUrl}
-                                      alt={account.username}
-                                      className="w-10 h-10 rounded-lg object-cover"
-                                    />
-                                  ) : (
-                                    <div className="w-10 h-10 rounded-lg bg-gray-800 border border-gray-700" />
-                                  )}
-                                  <div className="min-w-0">
-                                    <div className="text-white font-semibold truncate">@{account.username}</div>
-                                    <div className="text-gray-400 text-sm truncate">Connected via Facebook Page</div>
-                                  </div>
-                                </button>
-                              );
-                            })}
-
-                            {filteredInstagramAccounts.length === 0 && (
-                              <div className="sm:col-span-2 text-gray-400 text-sm bg-gray-900/40 border border-gray-700 rounded-lg p-4">
-                                No connected Instagram business accounts found.
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">Instagram Page URL</label>
-                    <input
-                      type="text"
-                      placeholder="https://instagram.com/yourpage"
-                      value={instagramPageUrl}
-                      onChange={(e) => setInstagramPageUrl(e.target.value)}
-                      className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {hasInstagramPage === false && (
-                <div className="bg-indigo-900/20 border border-indigo-500/30 rounded-lg p-5">
-                  <p className="text-indigo-300">✓ We'll help you create an Instagram account optimized for your validation test.</p>
-                </div>
-              )}
-            </div>
-
-            {(hasFacebookPage !== null || hasInstagramPage !== null) && (
+            {(hasFacebookPage !== null) && (
               <div className="bg-gradient-to-br from-indigo-900/40 to-purple-900/40 border border-indigo-500/50 rounded-xl p-8">
                 <h3 className="text-xl font-semibold text-white mb-3">What happens next</h3>
                 <p className="text-indigo-200 text-lg mb-6">
-                  Now let's create your ad creative that will be shown to your target audience.
+                  Next, connect your Instagram account for stronger signal quality.
                 </p>
                 <div className="flex justify-center">
                   <button
                     onClick={() => setAdsSubStep(2)}
                     className="px-8 py-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold text-lg"
                   >
-                    Create Ad
+                    Continue
                   </button>
                 </div>
               </div>
@@ -661,8 +772,215 @@ export function SetupMetaAdsStep({
         </div>
       )}
 
-      {/* Sub-step 2: Create Ad */}
+      {/* Sub-step 2: Instagram */}
       {adsSubStep === 2 && (
+        <div>
+          <h2 className="text-3xl font-bold text-white mb-4 text-center">Connect Instagram</h2>
+          <p className="text-gray-400 mb-8 text-center">
+            Instagram is recommended to get a clearer signal from your test.
+          </p>
+
+          <div className="max-w-3xl mx-auto space-y-8">
+            <div
+              className={`bg-gray-900 rounded-xl p-8 border border-gray-800 transition-all ${
+                isInstagramSkipped ? 'opacity-60' : ''
+              }`}
+            >
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-purple-600 via-pink-600 to-orange-500 flex items-center justify-center flex-shrink-0">
+                    <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-bold text-white">Instagram Page</h3>
+                    <p className="text-gray-400 text-sm">Connect your Instagram business account</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsInstagramSkipped((prev) => !prev)}
+                  className="text-sm text-gray-300 hover:text-white transition-colors"
+                >
+                  {isInstagramSkipped ? 'Undo skip' : 'Skip for now'}
+                </button>
+              </div>
+
+              <div className="bg-gray-800/60 border border-gray-700 rounded-lg p-4 mb-6">
+                <p className="text-gray-200 text-sm">
+                  Run ads on both Facebook and Instagram to get 45% more clarity in early demand signals.
+                </p>
+              </div>
+
+              {isInstagramSkipped ? (
+                <div className="bg-gray-900/50 border border-gray-800 rounded-lg p-4">
+                  <p className="text-gray-400 text-sm">Instagram setup skipped for now.</p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-gray-300 mb-4">Do you have an Instagram page?</p>
+                  <div className="flex gap-4 mb-6">
+                    <button
+                      onClick={() => {
+                        setHasInstagramPage(true);
+                        shouldFetchInstagramAccountsRef.current = true;
+
+                        if (metaAuthStatus === 'connected' && facebookPages.length > 0) {
+                          fetchInstagramBusinessAccounts(facebookPages);
+                          return;
+                        }
+
+                        void connectInstagramAccount();
+                      }}
+                      className={`flex-1 px-6 py-4 rounded-lg border-2 font-semibold transition-all ${
+                        hasInstagramPage === true
+                          ? 'border-indigo-500 bg-indigo-500/10 text-white'
+                          : 'border-gray-700 text-gray-400 hover:border-gray-600'
+                      }`}
+                    >
+                      Yes, I have one
+                    </button>
+                    <button
+                      onClick={() => setHasInstagramPage(false)}
+                      className={`flex-1 px-6 py-4 rounded-lg border-2 font-semibold transition-all ${
+                        hasInstagramPage === false
+                          ? 'border-indigo-500 bg-indigo-500/10 text-white'
+                          : 'border-gray-700 text-gray-400 hover:border-gray-600'
+                      }`}
+                    >
+                      No, create one for me
+                    </button>
+                  </div>
+
+                  {hasInstagramPage === true && (
+                    <div className="space-y-4">
+                      {!facebookAppId ? (
+                        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4">
+                          <p className="text-amber-100 text-sm">
+                            Add a Facebook App ID (VITE_FACEBOOK_APP_ID) to enable Instagram account search via Facebook Login (permissions: instagram_basic, pages_show_list). For now, paste your Instagram URL below.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="bg-gray-800/40 border border-gray-700 rounded-lg p-5">
+                          <div className="flex items-center justify-between gap-4 flex-wrap">
+                            <div>
+                              <div className="text-white font-semibold">Find your Instagram Business Account</div>
+                              <div className="text-gray-400 text-sm">We’ll show Instagram accounts connected to your Facebook Pages.</div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (metaAuthStatus === 'connected' && facebookPages.length > 0) {
+                                  fetchInstagramBusinessAccounts(facebookPages);
+                                } else {
+                                  void connectMetaAccount();
+                                }
+                              }}
+                              disabled={metaAuthStatus === 'connecting' || metaConnectStatus === 'loading'}
+                              className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold disabled:opacity-50"
+                            >
+                              {metaAuthStatus === 'connecting'
+                                ? 'Connecting...'
+                                : metaAuthStatus === 'connected'
+                                  ? 'Refresh accounts'
+                                  : 'Connect Instagram'}
+                            </button>
+                          </div>
+
+                          {metaErrorMessage && <p className="text-red-400 text-sm mt-3">{metaErrorMessage}</p>}
+
+                          {metaAuthStatus === 'connected' && (
+                            <div className="mt-5 space-y-4">
+                              <input
+                                type="text"
+                                placeholder="Search Instagram accounts"
+                                value={instagramAccountQuery}
+                                onChange={(e) => setInstagramAccountQuery(e.target.value)}
+                                className="w-full px-4 py-3 bg-gray-900 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
+                              />
+
+                              <div className="grid sm:grid-cols-2 gap-3">
+                                {filteredInstagramAccounts.map((account) => {
+                                  const url = `https://instagram.com/${account.username}`;
+                                  const isSelected = url === instagramPageUrl;
+
+                                  return (
+                                    <button
+                                      key={account.id}
+                                      type="button"
+                                      onClick={() => setInstagramPageUrl(url)}
+                                      className={`flex items-center gap-3 p-4 rounded-lg border transition-colors text-left ${
+                                        isSelected
+                                          ? 'border-indigo-500 bg-indigo-500/10'
+                                          : 'border-gray-700 hover:border-gray-600 bg-gray-900/40'
+                                      }`}
+                                    >
+                                      {account.profilePictureUrl ? (
+                                        <img
+                                          src={account.profilePictureUrl}
+                                          alt={account.username}
+                                          className="w-10 h-10 rounded-lg object-cover"
+                                        />
+                                      ) : (
+                                        <div className="w-10 h-10 rounded-lg bg-gray-800 border border-gray-700" />
+                                      )}
+                                      <div className="min-w-0">
+                                        <div className="text-white font-semibold truncate">@{account.username}</div>
+                                        <div className="text-gray-400 text-sm truncate">Connected via Facebook Page</div>
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+
+                                {filteredInstagramAccounts.length === 0 && (
+                                  <div className="sm:col-span-2 text-gray-400 text-sm bg-gray-900/40 border border-gray-700 rounded-lg p-4">
+                                    No connected Instagram business accounts found.
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {hasInstagramPage === false && (
+                    <div className="bg-indigo-900/20 border border-indigo-500/30 rounded-lg p-5">
+                      <p className="text-indigo-300">✓ We'll help you create an Instagram account optimized for your validation test.</p>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            <div className="bg-gradient-to-br from-indigo-900/40 to-purple-900/40 border border-indigo-500/50 rounded-xl p-8">
+              <h3 className="text-xl font-semibold text-white mb-3">What happens next</h3>
+              <p className="text-indigo-200 text-lg mb-6">
+                Now let's create your ad creative that will be shown to your target audience.
+              </p>
+              <div className="flex justify-between">
+                <button
+                  onClick={() => setAdsSubStep(1)}
+                  className="px-6 py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors font-semibold"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={() => setAdsSubStep(3)}
+                  className="px-8 py-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold text-lg"
+                >
+                  Create Ad
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sub-step 3: Create Ad */}
+      {adsSubStep === 3 && (
         <div>
           <h2 className="text-3xl font-bold text-white mb-4 text-center">Create your ad</h2>
           <p className="text-gray-400 mb-8 text-center">Design the ad that will attract your target audience.</p>
@@ -687,21 +1005,24 @@ export function SetupMetaAdsStep({
                   <p className="text-gray-400 text-sm">Use your own image</p>
                 </button>
                 <button
-                  onClick={() => {
-                    setAdImageMethod('ai');
-                    setAdImageUrl('https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&q=80');
-                  }}
+                  onClick={handleGenerateImage}
+                  disabled={isGeneratingImage}
                   className={`p-6 rounded-lg border-2 transition-all ${
                     adImageMethod === 'ai' ? 'border-indigo-500 bg-indigo-500/10' : 'border-gray-700 hover:border-gray-600'
                   }`}
                 >
                   <Sparkles
-                    className={`w-8 h-8 mx-auto mb-3 ${adImageMethod === 'ai' ? 'text-indigo-400' : 'text-gray-400'}`}
+                    className={`w-8 h-8 mx-auto mb-3 ${
+                      adImageMethod === 'ai' ? 'text-indigo-400' : 'text-gray-400'
+                    }`}
                   />
                   <h4 className="text-lg font-semibold text-white mb-1">AI Create</h4>
-                  <p className="text-gray-400 text-sm">Generate with AI</p>
+                  <p className="text-gray-400 text-sm">
+                    {isGeneratingImage ? 'Generating...' : 'Generate with AI'}
+                  </p>
                 </button>
               </div>
+              {imageError && <p className="text-red-400 text-sm mb-4">{imageError}</p>}
 
               {adImageMethod === 'upload' && (
                 <div>
@@ -729,6 +1050,44 @@ export function SetupMetaAdsStep({
               <h3 className="text-xl font-semibold text-white mb-4">Ad Creative</h3>
               <div className="space-y-4">
                 <div>
+                  {headlineOptions.length > 0 && (
+                    <div className="mb-3">
+                      <div className="text-xs uppercase tracking-wide text-gray-500 mb-2">Headline options</div>
+                      <div className="flex flex-wrap gap-2">
+                        {headlineOptions.map((headline, index) => {
+                          const isSelected = headlineMode === 'preset' && adHeadline === headline;
+                          return (
+                            <button
+                              key={`${headline}-${index}`}
+                              type="button"
+                              onClick={() => {
+                                setHeadlineMode('preset');
+                                setAdHeadline(headline);
+                              }}
+                              className={`px-3 py-1.5 rounded-full text-xs border transition-colors ${
+                                isSelected
+                                  ? 'border-indigo-500 bg-indigo-500/10 text-indigo-200'
+                                  : 'border-gray-700 text-gray-300 hover:border-gray-600'
+                              }`}
+                            >
+                              {headline}
+                            </button>
+                          );
+                        })}
+                        <button
+                          type="button"
+                          onClick={() => setHeadlineMode('custom')}
+                          className={`px-3 py-1.5 rounded-full text-xs border transition-colors ${
+                            headlineMode === 'custom'
+                              ? 'border-indigo-500 bg-indigo-500/10 text-indigo-200'
+                              : 'border-gray-700 text-gray-300 hover:border-gray-600'
+                          }`}
+                        >
+                          Custom
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   <label className="block text-sm font-medium text-gray-300 mb-2">Headline *</label>
                   <input
                     type="text"
@@ -736,30 +1095,94 @@ export function SetupMetaAdsStep({
                     value={adHeadline}
                     onChange={(e) => setAdHeadline(e.target.value)}
                     maxLength={40}
+                    readOnly={headlineMode === 'preset' && headlineOptions.length > 0}
                     className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
                   />
                   <p className="text-gray-500 text-sm mt-1">{adHeadline.length}/40 characters</p>
                 </div>
                 <div>
+                  {descriptionOptions.length > 0 && (
+                    <div className="mb-3">
+                      <div className="text-xs uppercase tracking-wide text-gray-500 mb-2">Description options</div>
+                      <div className="flex flex-wrap gap-2">
+                        {descriptionOptions.map((description, index) => {
+                          const isSelected = descriptionMode === 'preset' && adDescription === description;
+                          return (
+                            <button
+                              key={`${description}-${index}`}
+                              type="button"
+                              onClick={() => {
+                                setDescriptionMode('preset');
+                                setAdDescription(description);
+                              }}
+                              className={`px-3 py-1.5 rounded-full text-xs border transition-colors ${
+                                isSelected
+                                  ? 'border-indigo-500 bg-indigo-500/10 text-indigo-200'
+                                  : 'border-gray-700 text-gray-300 hover:border-gray-600'
+                              }`}
+                            >
+                              {description}
+                            </button>
+                          );
+                        })}
+                        <button
+                          type="button"
+                          onClick={() => setDescriptionMode('custom')}
+                          className={`px-3 py-1.5 rounded-full text-xs border transition-colors ${
+                            descriptionMode === 'custom'
+                              ? 'border-indigo-500 bg-indigo-500/10 text-indigo-200'
+                              : 'border-gray-700 text-gray-300 hover:border-gray-600'
+                          }`}
+                        >
+                          Custom
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   <label className="block text-sm font-medium text-gray-300 mb-2">Description *</label>
                   <textarea
                     placeholder="e.g., Healthy meal prep delivered to your door. Save time, eat better."
                     value={adDescription}
                     onChange={(e) => setAdDescription(e.target.value)}
                     maxLength={125}
+                    readOnly={descriptionMode === 'preset' && descriptionOptions.length > 0}
                     className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors h-24"
                   />
                   <p className="text-gray-500 text-sm mt-1">{adDescription.length}/125 characters</p>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Call to Action *</label>
-                  <input
-                    type="text"
-                    placeholder="e.g., Learn More"
-                    value={adCta}
-                    onChange={(e) => setAdCta(e.target.value)}
-                    className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
-                  />
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsAdvancedOpen((prev) => !prev)}
+                    className="flex items-center gap-2 text-sm text-gray-300 hover:text-white transition-colors"
+                  >
+                    Advanced
+                    <ChevronDown className={`w-4 h-4 transition-transform ${isAdvancedOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {isAdvancedOpen && (
+                    <div className="mt-4">
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Call to Action *</label>
+                      <select
+                        value={adCta || 'Learn More'}
+                        onChange={(e) => setAdCta(e.target.value)}
+                        className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
+                      >
+                        {[
+                          'Learn More',
+                          'Sign Up',
+                          'Get Started',
+                          'Book Now',
+                          'Contact Us',
+                          'Download',
+                          'Shop Now',
+                        ].map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -826,13 +1249,13 @@ export function SetupMetaAdsStep({
                 </p>
                 <div className="flex justify-between">
                   <button
-                    onClick={() => setAdsSubStep(1)}
+                    onClick={() => setAdsSubStep(2)}
                     className="px-6 py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors font-semibold"
                   >
                     Back
                   </button>
                   <button
-                    onClick={() => setAdsSubStep(3)}
+                    onClick={() => setAdsSubStep(4)}
                     className="px-8 py-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold text-lg"
                   >
                     Setup Ad & Launch
@@ -844,10 +1267,10 @@ export function SetupMetaAdsStep({
         </div>
       )}
 
-      {/* Sub-step 3: Setup Ad & Launch */}
-      {adsSubStep === 3 && (
+      {/* Sub-step 4: Review Ad & Launch */}
+      {adsSubStep === 4 && (
         <div>
-          <h2 className="text-3xl font-bold text-white mb-4 text-center">Setup Ad & Launch</h2>
+          <h2 className="text-3xl font-bold text-white mb-4 text-center">Review Ad & Launch</h2>
           <p className="text-gray-400 mb-8 text-center">
             Set your audience targeting and budget to launch a small validation test.
           </p>
@@ -855,7 +1278,12 @@ export function SetupMetaAdsStep({
           <div className="max-w-3xl mx-auto space-y-6">
             {/* Audience */}
             <div className="bg-gray-900 rounded-xl p-8 border border-gray-800">
-              <h3 className="text-xl font-semibold text-white mb-4">Audience</h3>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-9 h-9 rounded-lg bg-indigo-600/15 text-indigo-300 flex items-center justify-center">
+                  <Users className="w-5 h-5" />
+                </div>
+                <h3 className="text-xl font-semibold text-white">Audience</h3>
+              </div>
 
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
@@ -886,32 +1314,65 @@ export function SetupMetaAdsStep({
                   <label className="block text-sm font-medium text-gray-300 mb-2">Countries</label>
                   <div className="grid grid-cols-2 gap-3">
                     {availableCountries.map((country) => {
-                      const selected = adCountries.includes(country);
+                      const selected = adCountries.includes(country.name);
 
                       return (
                         <button
-                          key={country}
-                          onClick={() => toggleCountry(country)}
+                          key={country.name}
+                          onClick={() => toggleCountry(country.name)}
                           className={`px-4 py-3 rounded-lg border-2 font-semibold transition-all flex items-center justify-between gap-3 ${
                             selected
                               ? 'border-indigo-500 bg-indigo-500/10 text-white'
                               : 'border-gray-700 text-gray-400 hover:border-gray-600'
                           }`}
                         >
-                          <span className="text-left text-sm">{country}</span>
+                          <span className="text-left text-sm">
+                            <span className="mr-2">{country.flag}</span>
+                            {country.name}
+                          </span>
                           {selected && <Check className="w-4 h-4 text-indigo-400 flex-shrink-0" />}
                         </button>
                       );
                     })}
                   </div>
                   <p className="text-gray-500 text-sm mt-2">Select one or more target countries.</p>
+                  <div className="mt-4">
+                    <label className="block text-sm font-medium text-gray-300 mb-2">More Countries</label>
+                    <div className="flex flex-col gap-3 sm:flex-row">
+                      <input
+                        type="text"
+                        list="more-countries"
+                        placeholder="Start typing to add a country"
+                        value={moreCountryQuery}
+                        onChange={(e) => setMoreCountryQuery(e.target.value)}
+                        className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddCountry}
+                        className="px-5 py-3 bg-gray-900 border border-gray-700 text-white rounded-lg hover:border-indigo-500 transition-colors font-semibold"
+                      >
+                        Add
+                      </button>
+                    </div>
+                    <datalist id="more-countries">
+                      {additionalCountries.map((country) => (
+                        <option key={country} value={country} />
+                      ))}
+                    </datalist>
+                  </div>
                 </div>
               </div>
             </div>
 
             {/* Budget */}
             <div className="bg-gray-900 rounded-xl p-8 border border-gray-800">
-              <h3 className="text-xl font-semibold text-white mb-4">Budget & Duration</h3>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-9 h-9 rounded-lg bg-indigo-600/15 text-indigo-300 flex items-center justify-center">
+                  <Wallet className="w-5 h-5" />
+                </div>
+                <h3 className="text-xl font-semibold text-white">Budget & Duration</h3>
+              </div>
 
               <div className="grid md:grid-cols-2 gap-6">
                 <div>
@@ -970,7 +1431,7 @@ export function SetupMetaAdsStep({
                   Back
                 </button>
                 <button
-                  onClick={() => setActiveStep('email')}
+                  onClick={() => setShowLaunchReview(true)}
                   disabled={!canLaunch}
                   className="px-8 py-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold text-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -978,6 +1439,93 @@ export function SetupMetaAdsStep({
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showLaunchReview && (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+          onClick={() => setShowLaunchReview(false)}
+        >
+          <div
+            className="bg-gray-900 rounded-2xl p-8 w-full max-w-3xl border border-gray-800 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold text-white">Review Ad & Launch</h3>
+              <button
+                onClick={() => setShowLaunchReview(false)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-6">
+              <div className="bg-gray-800 rounded-xl border border-gray-700 p-5">
+                <h4 className="text-sm font-medium text-gray-400 mb-4">Ad Preview (1:1 Square)</h4>
+                <div className="bg-gray-900 rounded-lg overflow-hidden border border-gray-700">
+                  <div className="aspect-square">
+                    {adImageUrl ? (
+                      <img src={adImageUrl} alt="Ad preview" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full bg-gray-800" />
+                    )}
+                  </div>
+                  <div className="p-4">
+                    <h5 className="text-white font-semibold mb-1 text-sm">{adHeadline || 'Headline'}</h5>
+                    <p className="text-gray-400 text-xs mb-3 line-clamp-2">{adDescription || 'Description'}</p>
+                    <button className="w-full py-2 bg-indigo-600 text-white rounded text-xs font-semibold">
+                      {adCta || 'Learn More'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-800 rounded-xl border border-gray-700 p-5 space-y-4">
+                <div>
+                  <div className="text-sm text-gray-400 mb-2">Targeting</div>
+                  <div className="text-white text-sm">
+                    Ages {adAgeMin}–{adAgeMax}
+                  </div>
+                  <div className="text-gray-400 text-sm mt-1">
+                    Countries: {adCountries.length > 0 ? adCountries.join(', ') : 'None'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-sm text-gray-400 mb-2">Budget</div>
+                  <div className="text-white text-sm">
+                    ${adBudgetPerDay ?? 0} per day for {adDurationDays ?? 0} days
+                  </div>
+                </div>
+                <div className="border-t border-gray-700 pt-4">
+                  <div className="text-sm text-gray-400 mb-1">Total</div>
+                  <div className="text-2xl font-semibold text-white">
+                    {totalBudget !== null ? `$${totalBudget}` : '--'}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-8 flex justify-end gap-3">
+              <button
+                onClick={() => setShowLaunchReview(false)}
+                className="px-6 py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors font-semibold"
+              >
+                Back
+              </button>
+              <button
+                onClick={handleLaunchPayment}
+                disabled={isLaunchingPayment}
+                className="px-8 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold disabled:opacity-50"
+              >
+                {isLaunchingPayment ? 'Redirecting...' : 'Confirm & Launch'}
+              </button>
+            </div>
+            {paymentError && (
+              <p className="mt-4 text-sm text-red-300 text-right">{paymentError}</p>
+            )}
           </div>
         </div>
       )}

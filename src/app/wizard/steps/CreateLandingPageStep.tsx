@@ -1,5 +1,6 @@
 import { CheckCircle2, Eye, Lightbulb, Loader2, Rocket, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { supabase } from '../../../lib/supabaseClient';
 
 type CreateLandingPageStepProps = {
   landingSubStep: number;
@@ -40,6 +41,8 @@ export function CreateLandingPageStep({
   const [customDomainMode, setCustomDomainMode] = useState<'have' | 'buy' | null>(null);
   const [selectedDomainToBuy, setSelectedDomainToBuy] = useState<string | null>(null);
   const [deployStepIndex, setDeployStepIndex] = useState(0);
+  const [isResearchingIdea, setIsResearchingIdea] = useState(false);
+  const [researchError, setResearchError] = useState<string | null>(null);
 
   const ideaSlug =
     ideaDescription
@@ -102,11 +105,77 @@ export function CreateLandingPageStep({
     return () => timers.forEach((t) => window.clearTimeout(t));
   }, [landingSubStep]);
 
+  useEffect(() => {
+    const stored = localStorage.getItem('trusignal.ideaInputs');
+    if (!stored) return;
+
+    try {
+      const parsed = JSON.parse(stored) as {
+        ideaDescription?: string;
+        targetAudience?: string;
+        problemSolved?: string;
+      };
+
+      if (!ideaDescription && parsed.ideaDescription) {
+        setIdeaDescription(parsed.ideaDescription);
+      }
+
+      if (!targetAudience && parsed.targetAudience) {
+        setTargetAudience(parsed.targetAudience);
+      }
+
+      if (!problemSolved && parsed.problemSolved) {
+        setProblemSolved(parsed.problemSolved);
+      }
+    } catch (_error) {
+      // Ignore stored data errors.
+    }
+  }, [ideaDescription, targetAudience, problemSolved, setIdeaDescription, setProblemSolved, setTargetAudience]);
+
+  useEffect(() => {
+    const payload = {
+      ideaDescription,
+      targetAudience,
+      problemSolved,
+    };
+
+    localStorage.setItem('trusignal.ideaInputs', JSON.stringify(payload));
+  }, [ideaDescription, targetAudience, problemSolved]);
+
   const templateOptions = [
     { id: 'sample-a', name: 'Sample A', desc: 'Clean, modern layout' },
     { id: 'sample-b', name: 'Sample B', desc: 'Bold, high-conversion layout' },
     { id: 'sample-c', name: 'Sample C', desc: 'Professional, trust-building layout' },
   ];
+
+  const handleBuildPage = async () => {
+    if (!ideaDescription || !targetAudience || !problemSolved) return;
+
+    setIsResearchingIdea(true);
+    setResearchError(null);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('analyze-idea', {
+        body: {
+          idea: ideaDescription,
+          audience: targetAudience,
+          problem: problemSolved,
+          segment_count: 3,
+        },
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      localStorage.setItem('trusignal.analyzeIdea', JSON.stringify(data));
+      setLandingSubStep(2);
+    } catch (_error) {
+      setResearchError('Unable to analyze your idea right now. Please try again.');
+    } finally {
+      setIsResearchingIdea(false);
+    }
+  };
 
   return (
     <div>
@@ -197,13 +266,22 @@ export function CreateLandingPageStep({
             </p>
             <div className="flex justify-end">
               <button
-                onClick={() => setLandingSubStep(2)}
-                disabled={!ideaDescription || !targetAudience || !problemSolved}
+                onClick={handleBuildPage}
+                disabled={!ideaDescription || !targetAudience || !problemSolved || isResearchingIdea}
                 className="px-8 py-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold text-lg disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Build Page
               </button>
             </div>
+            {isResearchingIdea && (
+              <div className="mt-4 flex items-center justify-end gap-2 text-indigo-200 text-sm">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Researching your idea...
+              </div>
+            )}
+            {researchError && (
+              <div className="mt-4 text-right text-sm text-red-300">{researchError}</div>
+            )}
           </div>
         </div>
       )}
