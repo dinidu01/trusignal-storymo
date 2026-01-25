@@ -15,7 +15,19 @@ Deno.serve(async (req) => {
     });
   }
 
-  let payload: { pricePerDay?: number; durationDays?: number; customerEmail?: string };
+  let payload: {
+    checkoutType?: "ads" | "domain";
+    pricePerDay?: number;
+    durationDays?: number;
+    oneTimeAmount?: number;
+    productName?: string;
+    productDescription?: string;
+    metadata?: Record<string, string>;
+    customerEmail?: string;
+    returnStep?: "landing" | "ads" | "email" | "results";
+    returnSubStep?: number;
+    returnDomain?: string;
+  };
   try {
     payload = await req.json();
   } catch (_error) {
@@ -25,10 +37,54 @@ Deno.serve(async (req) => {
     });
   }
 
+  const oneTimeAmount = Number(payload.oneTimeAmount);
   const pricePerDay = Number(payload.pricePerDay);
   const durationDays = Number(payload.durationDays);
 
-  if (!Number.isFinite(pricePerDay) || !Number.isFinite(durationDays)) {
+  const strategies = {
+    ads: {
+      shouldUse: () => Number.isFinite(pricePerDay) && Number.isFinite(durationDays),
+      build: () => {
+        const quantity = Math.max(1, Math.round(durationDays));
+        const unitAmount = Math.round(pricePerDay * 100);
+        const productName = payload.productName?.trim() || "Price per Day";
+        const productDescription = payload.productDescription?.trim() || `Duration: ${quantity} days`;
+        return {
+          unitAmount,
+          quantity,
+          productName,
+          productDescription,
+          metadata: {
+            price_per_day: String(pricePerDay),
+            duration_days: String(durationDays),
+            sub_total: String(pricePerDay * durationDays),
+          },
+        };
+      },
+    },
+    domain: {
+      shouldUse: () => Number.isFinite(oneTimeAmount),
+      build: () => {
+        const unitAmount = Math.round(oneTimeAmount * 100);
+        const productName = payload.productName?.trim() || "Domain purchase";
+        const productDescription = payload.productDescription?.trim() || "";
+        return {
+          unitAmount,
+          quantity: 1,
+          productName,
+          productDescription,
+          metadata: {},
+        };
+      },
+    },
+  } as const;
+
+  const selectedStrategy =
+    (payload.checkoutType && strategies[payload.checkoutType]) ||
+    (strategies.domain.shouldUse() ? strategies.domain : null) ||
+    (strategies.ads.shouldUse() ? strategies.ads : null);
+
+  if (!selectedStrategy?.shouldUse()) {
     return new Response(JSON.stringify({ error: "Missing pricing details" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -44,8 +100,7 @@ Deno.serve(async (req) => {
     });
   }
 
-  const unitAmount = Math.round(pricePerDay * 100);
-  const quantity = Math.max(1, Math.round(durationDays));
+  const { unitAmount, quantity, productName, productDescription, metadata } = selectedStrategy.build();
   let customerEmail = payload.customerEmail?.trim();
 
   if (!customerEmail) {
@@ -71,19 +126,46 @@ Deno.serve(async (req) => {
     }
   }
 
+  const buildReturnUrl = (status: "success" | "cancel") => {
+    const url = new URL(siteUrl);
+    url.searchParams.set("checkout", status);
+    if (payload.checkoutType) {
+      url.searchParams.set("type", payload.checkoutType);
+    }
+    if (payload.returnStep) {
+      url.searchParams.set("step", payload.returnStep);
+    }
+    if (Number.isFinite(payload.returnSubStep)) {
+      url.searchParams.set("substep", String(payload.returnSubStep));
+    }
+    if (payload.returnDomain?.trim()) {
+      url.searchParams.set("domain", payload.returnDomain.trim());
+    }
+    return url.toString();
+  };
+
   const params = new URLSearchParams({
     "mode": "payment",
-    "success_url": `${siteUrl}/?payment=success`,
-    "cancel_url": `${siteUrl}/?payment=cancelled`,
+    "success_url": buildReturnUrl("success"),
+    "cancel_url": buildReturnUrl("cancel"),
     "line_items[0][price_data][currency]": "usd",
-    "line_items[0][price_data][product_data][name]": "Price per Day",
-    "line_items[0][price_data][product_data][description]": `Duration: ${quantity} days`,
+    "line_items[0][price_data][product_data][name]": productName,
+    "line_items[0][price_data][product_data][description]": productDescription,
     "line_items[0][price_data][unit_amount]": String(unitAmount),
     "line_items[0][quantity]": String(quantity),
-    "metadata[price_per_day]": String(pricePerDay),
-    "metadata[duration_days]": String(durationDays),
-    "metadata[sub_total]": String(pricePerDay * durationDays),
   });
+
+  for (const [key, value] of Object.entries(metadata)) {
+    params.set(`metadata[${key}]`, value);
+  }
+
+  if (payload.metadata) {
+    for (const [key, value] of Object.entries(payload.metadata)) {
+      if (typeof value === "string" && value.trim().length > 0) {
+        params.set(`metadata[${key}]`, value);
+      }
+    }
+  }
 
   if (customerEmail) {
     params.set("customer_email", customerEmail);

@@ -1,4 +1,4 @@
-import { CheckCircle2, Eye, Lightbulb, Loader2, Rocket, X } from 'lucide-react';
+import { CheckCircle2, Eye, ExternalLink, Lightbulb, Loader2, Rocket, X, Zap } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabaseClient';
 
@@ -18,6 +18,10 @@ type CreateLandingPageStepProps = {
   customDomain: string;
   setCustomDomain: (value: string) => void;
   setActiveStep: (step: 'landing' | 'domain' | 'ads' | 'email' | 'results') => void;
+  setLandingCompleted: (value: boolean) => void;
+  domainCheckoutStatus: 'success' | 'cancel' | null;
+  purchasedDomain: string | null;
+  onDismissDomainCheckoutNotice: () => void;
 };
 
 export function CreateLandingPageStep({
@@ -36,13 +40,20 @@ export function CreateLandingPageStep({
   customDomain,
   setCustomDomain,
   setActiveStep,
+  setLandingCompleted,
+  domainCheckoutStatus,
+  purchasedDomain,
+  onDismissDomainCheckoutNotice,
 }: CreateLandingPageStepProps) {
   const [previewTemplateId, setPreviewTemplateId] = useState<string | null>(null);
   const [customDomainMode, setCustomDomainMode] = useState<'have' | 'buy' | null>(null);
   const [selectedDomainToBuy, setSelectedDomainToBuy] = useState<string | null>(null);
   const [deployStepIndex, setDeployStepIndex] = useState(0);
   const [isResearchingIdea, setIsResearchingIdea] = useState(false);
+  const [ideaResearchComplete, setIdeaResearchComplete] = useState(false);
   const [researchError, setResearchError] = useState<string | null>(null);
+  const [isBuyingDomain, setIsBuyingDomain] = useState(false);
+  const [buyDomainError, setBuyDomainError] = useState<string | null>(null);
 
   const ideaSlug =
     ideaDescription
@@ -71,12 +82,18 @@ export function CreateLandingPageStep({
 
   const selectedDomain =
     domainChoice === 'trusignal'
-      ? `app.trusignal.tech/${ideaSlug}`
+      ? `app.trusignal.space/${ideaSlug}`
       : domainChoice === 'custom'
         ? customDomainMode === 'have'
           ? customDomain.trim()
           : selectedDomainToBuy ?? ''
         : '';
+
+  const selectedDomainHref = selectedDomain
+    ? selectedDomain.startsWith('http')
+      ? selectedDomain
+      : `https://${selectedDomain}`
+    : '';
 
   const canDeployPage =
     domainChoice === 'trusignal' ||
@@ -94,6 +111,17 @@ export function CreateLandingPageStep({
   const deploymentComplete = deployStepIndex >= deploySteps.length;
 
   useEffect(() => {
+    if (!previewTemplateId) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPreviewTemplateId(null);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [previewTemplateId]);
+
+  useEffect(() => {
     if (landingSubStep !== 4) return;
 
     setDeployStepIndex(0);
@@ -104,6 +132,13 @@ export function CreateLandingPageStep({
 
     return () => timers.forEach((t) => window.clearTimeout(t));
   }, [landingSubStep]);
+
+  useEffect(() => {
+    if (!purchasedDomain) return;
+    setDomainChoice('custom');
+    setCustomDomainMode('buy');
+    setSelectedDomainToBuy(purchasedDomain);
+  }, [purchasedDomain, setDomainChoice]);
 
   useEffect(() => {
     const stored = localStorage.getItem('trusignal.ideaInputs');
@@ -148,9 +183,62 @@ export function CreateLandingPageStep({
     { id: 'sample-c', name: 'Sample C', desc: 'Professional, trust-building layout' },
   ];
 
+  const templatePreviewUrls: Record<string, string> = {
+    'sample-a': 'https://bakey.trusignal.space/?v=v1',
+    'sample-b': 'https://bakey.trusignal.space/?v=v2',
+    'sample-c': 'https://bakey.trusignal.space/?v=v3',
+  };
+
+  const selectedDomainPurchaseOption = selectedDomainToBuy
+    ? domainPurchaseOptions.find((opt) => opt.domain === selectedDomainToBuy) ?? null
+    : null;
+
+  const hasPurchasedDomain = Boolean(purchasedDomain);
+  const domainCheckoutMessage =
+    domainCheckoutStatus === 'success'
+      ? 'Domain checkout complete. Your domain is ready to connect.'
+      : domainCheckoutStatus === 'cancel'
+        ? 'Domain checkout was cancelled.'
+        : null;
+
+  const handleBuyDomainCheckout = async () => {
+    if (!selectedDomainPurchaseOption) return;
+
+    setIsBuyingDomain(true);
+    setBuyDomainError(null);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('create-checkout-session', {
+        body: {
+          checkoutType: 'domain',
+          oneTimeAmount: selectedDomainPurchaseOption.price,
+          productName: 'Domain purchase',
+          productDescription: selectedDomainPurchaseOption.domain,
+          returnStep: 'landing',
+          returnSubStep: landingSubStep,
+          returnDomain: selectedDomainPurchaseOption.domain,
+          metadata: {
+            purchase_type: 'domain',
+            domain: selectedDomainPurchaseOption.domain,
+          },
+        },
+      });
+
+      if (error || !data?.url) {
+        throw error ?? new Error('Missing checkout URL.');
+      }
+
+      window.location.href = data.url;
+    } catch (_error) {
+      setBuyDomainError('Unable to start checkout. Please try again.');
+      setIsBuyingDomain(false);
+    }
+  };
+
   const handleBuildPage = async () => {
     if (!ideaDescription || !targetAudience || !problemSolved) return;
 
+    setIdeaResearchComplete(false);
     setIsResearchingIdea(true);
     setResearchError(null);
 
@@ -169,7 +257,7 @@ export function CreateLandingPageStep({
       }
 
       localStorage.setItem('trusignal.analyzeIdea', JSON.stringify(data));
-      setLandingSubStep(2);
+      setIdeaResearchComplete(true);
     } catch (_error) {
       setResearchError('Unable to analyze your idea right now. Please try again.');
     } finally {
@@ -221,7 +309,10 @@ export function CreateLandingPageStep({
                 <textarea
                   placeholder="e.g., A meal prep service for busy professionals that delivers healthy, pre-portioned ingredients..."
                   value={ideaDescription}
-                  onChange={(e) => setIdeaDescription(e.target.value)}
+                  onChange={(e) => {
+                    setIdeaResearchComplete(false);
+                    setIdeaDescription(e.target.value);
+                  }}
                   className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors h-32"
                 />
               </div>
@@ -232,7 +323,10 @@ export function CreateLandingPageStep({
                     type="text"
                     placeholder="e.g., Working professionals ages 25-40 who value health but lack time..."
                     value={targetAudience}
-                    onChange={(e) => setTargetAudience(e.target.value)}
+                    onChange={(e) => {
+                      setIdeaResearchComplete(false);
+                      setTargetAudience(e.target.value);
+                    }}
                     className="w-full px-4 py-3 pr-36 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
                   />
                   <button
@@ -251,7 +345,10 @@ export function CreateLandingPageStep({
                 <textarea
                   placeholder="e.g., Removes the guesswork and time spent on meal planning and grocery shopping..."
                   value={problemSolved}
-                  onChange={(e) => setProblemSolved(e.target.value)}
+                  onChange={(e) => {
+                    setIdeaResearchComplete(false);
+                    setProblemSolved(e.target.value);
+                  }}
                   className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors h-24"
                 />
               </div>
@@ -260,28 +357,66 @@ export function CreateLandingPageStep({
 
           {/* Promise Panel */}
           <div className="mt-8 bg-gradient-to-br from-indigo-900/40 to-purple-900/40 border border-indigo-500/50 rounded-xl p-8">
-            <h3 className="text-xl font-semibold text-white mb-3">What happens next</h3>
-            <p className="text-indigo-200 text-lg mb-6">
-              We will create several landing page samples for you to choose from, tailored to your idea and target audience.
-            </p>
-            <div className="flex justify-end">
+            <h3 className="text-xl font-semibold text-white mb-5">What happens next</h3>
+
+            {isResearchingIdea && (
+              <div className="flex flex-col items-center justify-center text-center py-4">
+                <Loader2 className="w-12 h-12 animate-spin text-indigo-200" />
+                <div className="mt-5 text-3xl font-bold text-white">Researching your idea...</div>
+              </div>
+            )}
+
+            <div className="space-y-5">
+              <div className="flex items-start gap-4">
+                <div className="pt-0.5">
+                  {ideaResearchComplete ? (
+                    <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+                  ) : isResearchingIdea ? (
+                    <Loader2 className="w-8 h-8 animate-spin text-indigo-200" />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-indigo-600/20 text-indigo-200 flex items-center justify-center font-semibold">1</div>
+                  )}
+                </div>
+                <div>
+                  <div className="text-white font-semibold">Research your idea</div>
+                  <div className="text-indigo-200 text-sm mt-1">
+                    We will gather your idea, target audience, and research it against similar businesses to collect market insights.
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-4">
+                <div className="pt-0.5">
+                  <div className="w-8 h-8 rounded-full bg-indigo-600/20 text-indigo-200 flex items-center justify-center font-semibold">2</div>
+                </div>
+                <div>
+                  <div className="text-white font-semibold">
+                    Create your landing page{' '}
+                    <span className="text-amber-200 font-semibold">in 30 seconds</span>
+                  </div>
+                  <div className="text-indigo-200 text-sm mt-1">Next, we’ll generate a landing web page style for you to choose from.</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end mt-6">
               <button
-                onClick={handleBuildPage}
+                onClick={() => {
+                  if (ideaResearchComplete) {
+                    setLandingSubStep(2);
+                    return;
+                  }
+
+                  handleBuildPage();
+                }}
                 disabled={!ideaDescription || !targetAudience || !problemSolved || isResearchingIdea}
                 className="px-8 py-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold text-lg disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Build Page
+                {ideaResearchComplete ? 'Build Page' : 'Research Idea'}
               </button>
             </div>
-            {isResearchingIdea && (
-              <div className="mt-4 flex items-center justify-end gap-2 text-indigo-200 text-sm">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Researching your idea...
-              </div>
-            )}
-            {researchError && (
-              <div className="mt-4 text-right text-sm text-red-300">{researchError}</div>
-            )}
+
+            {researchError && <div className="mt-4 text-right text-sm text-red-300">{researchError}</div>}
           </div>
         </div>
       )}
@@ -302,18 +437,15 @@ export function CreateLandingPageStep({
                         checked ? 'border-indigo-500' : 'border-gray-700'
                       }`}
                     >
-                      {/* Sample rectangle “being built” */}
-                      <div className="h-48 bg-gray-800">
-                        <div className="h-full w-full animate-pulse bg-gradient-to-r from-gray-800 via-gray-700/50 to-gray-800" />
-                        <div className="absolute inset-0 p-4">
-                          <div className="h-4 w-2/3 rounded bg-gray-700/70 mb-3" />
-                          <div className="h-3 w-1/2 rounded bg-gray-700/60 mb-4" />
-                          <div className="space-y-2">
-                            <div className="h-3 w-full rounded bg-gray-700/50" />
-                            <div className="h-3 w-11/12 rounded bg-gray-700/40" />
-                            <div className="h-3 w-10/12 rounded bg-gray-700/30" />
-                          </div>
-                        </div>
+                      {/* Template preview */}
+                      <div className="h-48 bg-gray-800 relative">
+                        <iframe
+                          title={`${template.name} preview`}
+                          src={templatePreviewUrls[template.id]}
+                          className="absolute inset-0 h-full w-full border-0 pointer-events-none"
+                          loading="lazy"
+                          sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
+                        />
                       </div>
 
                       {/* Floating preview button */}
@@ -353,11 +485,38 @@ export function CreateLandingPageStep({
 
           {/* Promise Panel */}
           <div className="mt-8 bg-gradient-to-br from-indigo-900/40 to-purple-900/40 border border-indigo-500/50 rounded-xl p-8">
-            <h3 className="text-xl font-semibold text-white mb-3">What happens next</h3>
-            <p className="text-indigo-200 text-lg mb-6">
-              We will create several landing page samples for you to choose from, tailored to your idea and target audience.
-            </p>
-            <div className="flex justify-between">
+            <h3 className="text-xl font-semibold text-white mb-5">What happens next</h3>
+
+            <div className="space-y-5">
+              <div className="flex items-start gap-4">
+                <div className="pt-0.5">
+                  {selectedTemplate ? (
+                    <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-indigo-600/20 text-indigo-200 flex items-center justify-center font-semibold">1</div>
+                  )}
+                </div>
+                <div>
+                  <div className="text-white font-semibold">Select your landing page style</div>
+                  <div className="text-indigo-200 text-sm mt-1">Select your landing page style from the above styles. (you can enhance later)</div>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-4">
+                <div className="pt-0.5">
+                  <div className="w-8 h-8 rounded-full bg-indigo-600/20 text-indigo-200 flex items-center justify-center font-semibold">2</div>
+                </div>
+                <div>
+                  <div className="text-white font-semibold">
+                    <span>Get your page live in </span>
+                    <span className="text-amber-200">1 second</span>
+                  </div>
+                  <div className="text-indigo-200 text-sm mt-1">Next, you’ll choose a domain and publish your landing page.</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-between mt-6">
               <button
                 onClick={() => setLandingSubStep(1)}
                 className="px-6 py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors font-semibold"
@@ -369,7 +528,7 @@ export function CreateLandingPageStep({
                 disabled={!selectedTemplate}
                 className="px-8 py-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold text-lg disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Continue
+                Get your page live
               </button>
             </div>
           </div>
@@ -383,9 +542,38 @@ export function CreateLandingPageStep({
           <p className="text-gray-400 mb-8">Choose the domain visitors will see when they land on your page.</p>
 
           {/* Domain Options */}
-          <div className="space-y-6">
-            {domainChoice === 'custom' ? (
-              <>
+          {domainCheckoutMessage && (
+            <div
+              className={`mb-6 rounded-xl border p-4 ${
+                domainCheckoutStatus === 'success'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-100'
+                  : 'bg-amber-500/10 border-amber-500/30 text-amber-100'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>{domainCheckoutMessage}</div>
+                <button
+                  type="button"
+                  onClick={onDismissDomainCheckoutNotice}
+                  className="p-1 rounded-md hover:bg-white/10 text-current"
+                  aria-label="Dismiss message"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {hasPurchasedDomain ? (
+            <div className="bg-gray-900 rounded-xl p-8 border border-gray-800">
+              <div className="text-white text-lg font-semibold mb-2">Purchased domain</div>
+              <div className="text-indigo-300 font-mono text-xl">{purchasedDomain}</div>
+              <div className="text-gray-400 text-sm mt-2">We’ll connect this domain during deployment.</div>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {domainChoice === 'custom' ? (
+                <>
                 {/* Custom Domain Option (expanded to top) */}
                 <div className="bg-gray-900 rounded-xl p-8 border border-gray-800">
                   <button
@@ -407,7 +595,12 @@ export function CreateLandingPageStep({
                       >
                         {domainChoice === 'custom' && <div className="w-3.5 h-3.5 rounded-full bg-indigo-500"></div>}
                       </div>
-                      <h3 className="text-2xl font-bold text-white">Use Custom Domain</h3>
+                      <h3 className="text-2xl font-bold text-white flex items-center gap-3">
+                        Use Custom Domain
+                        <span className="inline-flex items-center rounded-full bg-teal-400/15 text-teal-300 border border-teal-400/30 px-3 py-1 text-xs font-semibold">
+                          5 minutes Setup
+                        </span>
+                      </h3>
                     </div>
                     <p className="text-gray-400 text-lg ml-10">Connect your own domain name for a branded experience</p>
                     <p className="text-gray-500 text-sm ml-10 mt-2">Requires DNS setup • More professional appearance</p>
@@ -427,7 +620,12 @@ export function CreateLandingPageStep({
                             : 'border-gray-700 hover:border-gray-600'
                         }`}
                       >
-                        <div className="text-white font-semibold">Do you have a domain?</div>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-white font-semibold">Do you have a domain?</div>
+                          <span className="inline-flex items-center rounded-full bg-orange-500/15 text-orange-300 border border-orange-500/30 px-2.5 py-0.5 text-xs font-semibold">
+                            Advanced
+                          </span>
+                        </div>
                         <div className="text-gray-400 text-sm mt-1">Use a domain you already own</div>
                       </button>
 
@@ -443,7 +641,12 @@ export function CreateLandingPageStep({
                             : 'border-gray-700 hover:border-gray-600'
                         }`}
                       >
-                        <div className="text-white font-semibold">Buy a Domain</div>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-white font-semibold">Buy a Domain</div>
+                          <span className="inline-flex items-center rounded-full bg-amber-400/15 text-amber-200 border border-amber-400/30 px-2.5 py-0.5 text-xs font-semibold">
+                            Recommended
+                          </span>
+                        </div>
                         <div className="text-gray-400 text-sm mt-1">Choose a cheap domain for this test</div>
                       </button>
                     </div>
@@ -506,6 +709,23 @@ export function CreateLandingPageStep({
                             Selected domain: <span className="text-white font-mono">{selectedDomainToBuy}</span>
                           </div>
                         )}
+
+                        <button
+                          type="button"
+                          onClick={() => void handleBuyDomainCheckout()}
+                          disabled={!selectedDomainPurchaseOption || isBuyingDomain}
+                          className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-teal-500 text-white hover:bg-teal-600 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {isBuyingDomain ? (
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                          ) : (
+                            <Zap className="w-5 h-5" />
+                          )}
+                          1 Click Buy
+                          {selectedDomainPurchaseOption ? ` $${selectedDomainPurchaseOption.price.toFixed(2)}` : ''}
+                        </button>
+
+                        {buyDomainError && <div className="text-right text-sm text-red-300">{buyDomainError}</div>}
                       </div>
                     )}
                   </div>
@@ -546,18 +766,23 @@ export function CreateLandingPageStep({
                           <div className="w-3.5 h-3.5 rounded-full bg-indigo-500"></div>
                         )}
                       </div>
-                      <h3 className="text-2xl font-bold text-white">Use TruSignal Domain</h3>
+                      <h3 className="text-2xl font-bold text-white flex items-center gap-3">
+                        Use TruSignal Domain
+                        <span className="inline-flex items-center rounded-full bg-teal-400/15 text-teal-300 border border-teal-400/30 px-3 py-1 text-xs font-semibold">
+                          Simple &amp; Instant
+                        </span>
+                      </h3>
                     </div>
                     <p className="text-gray-400 text-lg ml-10">
                       Your landing page will be hosted at{' '}
-                      <span className="text-indigo-400 font-mono">app.trusignal.tech/your-idea</span>
+                      <span className="text-indigo-400 font-mono">app.trusignal.space/your-idea</span>
                     </p>
                     <p className="text-gray-500 text-sm ml-10 mt-2">Quick setup • No DNS configuration needed</p>
                   </button>
                 </div>
-              </>
-            ) : (
-              <>
+                </>
+              ) : (
+                <>
                 {/* TruSignal Domain Option */}
                 <div className="bg-gray-900 rounded-xl p-8 border border-gray-800">
                   <button
@@ -583,11 +808,16 @@ export function CreateLandingPageStep({
                           <div className="w-3.5 h-3.5 rounded-full bg-indigo-500"></div>
                         )}
                       </div>
-                      <h3 className="text-2xl font-bold text-white">Use TruSignal Domain</h3>
+                      <h3 className="text-2xl font-bold text-white flex items-center gap-3">
+                        Use TruSignal Domain
+                        <span className="inline-flex items-center rounded-full bg-teal-400/15 text-teal-300 border border-teal-400/30 px-3 py-1 text-xs font-semibold">
+                          Simple &amp; Instant
+                        </span>
+                      </h3>
                     </div>
                     <p className="text-gray-400 text-lg ml-10">
                       Your landing page will be hosted at{' '}
-                      <span className="text-indigo-400 font-mono">app.trusignal.tech/your-idea</span>
+                      <span className="text-indigo-400 font-mono">app.trusignal.space/your-idea</span>
                     </p>
                     <p className="text-gray-500 text-sm ml-10 mt-2">Quick setup • No DNS configuration needed</p>
                   </button>
@@ -628,23 +858,59 @@ export function CreateLandingPageStep({
                           <div className="w-3.5 h-3.5 rounded-full bg-indigo-500"></div>
                         )}
                       </div>
-                      <h3 className="text-2xl font-bold text-white">Use Custom Domain</h3>
+                      <h3 className="text-2xl font-bold text-white flex items-center gap-3">
+                        Use Custom Domain
+                        <span className="inline-flex items-center rounded-full bg-teal-400/15 text-teal-300 border border-teal-400/30 px-3 py-1 text-xs font-semibold">
+                          5 minutes Setup
+                        </span>
+                      </h3>
                     </div>
                     <p className="text-gray-400 text-lg ml-10">Connect your own domain name for a branded experience</p>
                     <p className="text-gray-500 text-sm ml-10 mt-2">Requires DNS setup • More professional appearance</p>
                   </button>
                 </div>
-              </>
-            )}
-          </div>
+                </>
+              )}
+            </div>
+          )}
 
           {/* Promise Panel */}
           <div className="mt-8 bg-gradient-to-br from-indigo-900/40 to-purple-900/40 border border-indigo-500/50 rounded-xl p-8">
-            <h3 className="text-xl font-semibold text-white mb-3">What happens next</h3>
-            <p className="text-indigo-200 text-lg mb-6">
-              We’ll launch your landing page on this domain and get it ready to receive visitors.
-            </p>
-            <div className="flex justify-between">
+            <h3 className="text-xl font-semibold text-white mb-5">What happens next</h3>
+
+            <div className="space-y-5">
+              <div className="flex items-start gap-4">
+                <div className="pt-0.5">
+                  {domainChoice ? (
+                    <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-indigo-600/20 text-indigo-200 flex items-center justify-center font-semibold">1</div>
+                  )}
+                </div>
+                <div>
+                  <div className="text-white font-semibold">Select a website domain method</div>
+                  <div className="text-indigo-200 text-sm mt-1">Choose how you want your landing page domain to look.</div>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-4">
+                <div className="pt-0.5">
+                  <div className="w-8 h-8 rounded-full bg-indigo-600/20 text-indigo-200 flex items-center justify-center font-semibold">2</div>
+                </div>
+                <div>
+                  <div className="text-white font-semibold">
+                    <span>Your page will be live in </span>
+                    <span className="text-amber-200">{domainChoice === 'custom' ? '30 seconds' : '1 second'}</span>
+                  </div>
+                  <div className="text-indigo-200 text-sm mt-1">
+                    (TruSignal domain: <span className="text-amber-200">1 second</span>, Custom domain:{' '}
+                    <span className="text-amber-200">30 seconds</span>)
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-between mt-6">
               <button
                 onClick={() => setLandingSubStep(2)}
                 className="px-6 py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors font-semibold"
@@ -656,7 +922,7 @@ export function CreateLandingPageStep({
                 disabled={!canDeployPage}
                 className="px-8 py-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold text-lg disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Deploy Page
+                Make Site Live
               </button>
             </div>
           </div>
@@ -715,7 +981,24 @@ export function CreateLandingPageStep({
             {deploymentComplete && (
               <div className="mt-6 bg-gradient-to-br from-indigo-900/40 to-purple-900/40 border border-indigo-500/50 rounded-xl p-6">
                 <div className="text-white font-semibold text-lg">Your page is live.</div>
-                <div className="text-indigo-200 mt-1">Next, we’ll drive traffic with Meta Ads.</div>
+
+                {selectedDomain && (
+                  <a
+                    href={selectedDomainHref}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-3 inline-flex items-center gap-3 text-indigo-200 hover:text-white transition-colors"
+                  >
+                    <span className="relative flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-400" />
+                    </span>
+                    <span className="font-mono text-sm">{selectedDomain}</span>
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                )}
+
+                <div className="text-indigo-200 mt-3">Next, we’ll drive traffic with Meta Ads.</div>
               </div>
             )}
           </div>
@@ -730,6 +1013,7 @@ export function CreateLandingPageStep({
 
             <button
               onClick={() => {
+                setLandingCompleted(true);
                 setActiveStep('ads');
                 setLandingSubStep(1);
               }}
@@ -744,20 +1028,12 @@ export function CreateLandingPageStep({
 
       {/* Preview Modal */}
       {previewTemplateId && (
-        <div
-          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6"
-          onClick={() => setPreviewTemplateId(null)}
-        >
-          <div
-            className="w-full max-w-3xl bg-gray-900 border border-gray-700 rounded-2xl overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm" onClick={() => setPreviewTemplateId(null)}>
+          <div className="w-full h-full bg-gray-900 border border-gray-700 overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
               <div>
                 <div className="text-white font-semibold">Preview</div>
-                <div className="text-gray-400 text-sm">
-                  {templateOptions.find((t) => t.id === previewTemplateId)?.name}
-                </div>
+                <div className="text-gray-400 text-sm">{templateOptions.find((t) => t.id === previewTemplateId)?.name}</div>
               </div>
               <button
                 type="button"
@@ -769,11 +1045,14 @@ export function CreateLandingPageStep({
               </button>
             </div>
 
-            <div className="p-6">
-              <div className="rounded-xl border border-gray-700 overflow-hidden">
-                <div className="h-80 bg-gray-800 relative">
-                  <div className="h-full w-full animate-pulse bg-gradient-to-r from-gray-800 via-gray-700/50 to-gray-800" />
-                </div>
+            <div className="flex-1 p-6 flex flex-col">
+              <div className="flex-1 rounded-xl border border-gray-700 overflow-hidden bg-gray-800">
+                <iframe
+                  title={`${templateOptions.find((t) => t.id === previewTemplateId)?.name ?? 'Template'} preview`}
+                  src={templatePreviewUrls[previewTemplateId]}
+                  className="h-full w-full border-0"
+                  sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
+                />
               </div>
 
               <div className="flex items-center justify-between mt-5">

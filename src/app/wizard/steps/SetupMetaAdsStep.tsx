@@ -38,6 +38,8 @@ type SetupMetaAdsStepProps = {
   adDurationDays: 3 | 7 | 10 | null;
   setAdDurationDays: (value: 3 | 7 | 10) => void;
   setActiveStep: (step: 'landing' | 'domain' | 'ads' | 'email' | 'results') => void;
+  adsCheckoutStatus: 'success' | 'cancel' | null;
+  onDismissAdsCheckoutNotice: () => void;
 };
 
 declare global {
@@ -120,6 +122,8 @@ export function SetupMetaAdsStep({
   adDurationDays,
   setAdDurationDays,
   setActiveStep,
+  adsCheckoutStatus,
+  onDismissAdsCheckoutNotice,
 }: SetupMetaAdsStepProps) {
   const facebookAppId = import.meta.env.VITE_FACEBOOK_APP_ID as string | undefined;
 
@@ -409,6 +413,13 @@ export function SetupMetaAdsStep({
   const totalBudget =
     adBudgetPerDay !== null && adDurationDays !== null ? adBudgetPerDay * adDurationDays : null;
 
+  const adsCheckoutMessage =
+    adsCheckoutStatus === 'success'
+      ? 'Payment confirmed. Your ad campaign is queued for launch.'
+      : adsCheckoutStatus === 'cancel'
+        ? 'Checkout was cancelled. Your ad campaign has not been launched.'
+        : null;
+
   const handleLaunchPayment = async () => {
     if (adBudgetPerDay === null || adDurationDays === null) return;
 
@@ -424,9 +435,12 @@ export function SetupMetaAdsStep({
 
       const { data, error } = await supabase.functions.invoke('create-checkout-session', {
         body: {
+          checkoutType: 'ads',
           pricePerDay: adBudgetPerDay,
           durationDays: adDurationDays,
           customerEmail: email,
+          returnStep: 'ads',
+          returnSubStep: adsSubStep,
         },
       });
 
@@ -1274,6 +1288,28 @@ export function SetupMetaAdsStep({
           <p className="text-gray-400 mb-8 text-center">
             Set your audience targeting and budget to launch a small validation test.
           </p>
+
+          {adsCheckoutMessage && (
+            <div
+              className={`mb-6 mx-auto max-w-3xl rounded-xl border p-4 ${
+                adsCheckoutStatus === 'success'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-100'
+                  : 'bg-amber-500/10 border-amber-500/30 text-amber-100'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>{adsCheckoutMessage}</div>
+                <button
+                  type="button"
+                  onClick={onDismissAdsCheckoutNotice}
+                  className="p-1 rounded-md hover:bg-white/10 text-current"
+                  aria-label="Dismiss message"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="max-w-3xl mx-auto space-y-6">
             {/* Audience */}

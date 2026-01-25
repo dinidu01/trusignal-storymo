@@ -21,6 +21,7 @@ export default function App() {
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [activeStep, setActiveStep] = useState<'landing' | 'domain' | 'ads' | 'email' | 'results'>('landing');
+  const [landingCompleted, setLandingCompleted] = useState(false);
   const [showNewIdeaInput, setShowNewIdeaInput] = useState(false);
   const [ideaInput, setIdeaInput] = useState('');
   const [domainChoice, setDomainChoice] = useState<'custom' | 'trusignal' | null>(null);
@@ -33,9 +34,19 @@ export default function App() {
   const [receivingEmail, setReceivingEmail] = useState('');
 
   const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
+  const [currentSearch, setCurrentSearch] = useState(() => window.location.search);
+  const [checkoutNotice, setCheckoutNotice] = useState<{
+    status: 'success' | 'cancel';
+    type: 'ads' | 'domain';
+    domain?: string;
+  } | null>(null);
+  const [purchasedDomain, setPurchasedDomain] = useState<string | null>(null);
 
   useEffect(() => {
-    const handlePopState = () => setCurrentPath(window.location.pathname);
+    const handlePopState = () => {
+      setCurrentPath(window.location.pathname);
+      setCurrentSearch(window.location.search);
+    };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
@@ -44,6 +55,7 @@ export default function App() {
     if (path === currentPath) return;
     window.history.pushState({}, '', path);
     setCurrentPath(path);
+    setCurrentSearch(window.location.search);
     window.scrollTo(0, 0);
   };
 
@@ -108,6 +120,86 @@ export default function App() {
   }, [typedText, isDeleting, phraseIndex]);
 
   useEffect(() => {
+    if (currentPath !== '/') return;
+    const params = new URLSearchParams(currentSearch);
+    const stepParam = params.get('step');
+    const substepParam = params.get('substep');
+    const checkoutParam = params.get('checkout');
+    const typeParam = params.get('type');
+    const domainParam = params.get('domain');
+
+    if (stepParam === 'landing' || stepParam === 'ads' || stepParam === 'email' || stepParam === 'results') {
+      setActiveStep(stepParam);
+    }
+
+    if (stepParam === 'landing' && substepParam) {
+      const parsed = Number(substepParam);
+      if (Number.isFinite(parsed)) {
+        setLandingSubStep(Math.min(4, Math.max(1, Math.round(parsed))));
+      }
+    }
+
+    if (stepParam === 'ads' && substepParam) {
+      const parsed = Number(substepParam);
+      if (Number.isFinite(parsed)) {
+        setAdsSubStep(Math.min(4, Math.max(1, Math.round(parsed))));
+      }
+    }
+
+    if ((checkoutParam === 'success' || checkoutParam === 'cancel') && (typeParam === 'ads' || typeParam === 'domain')) {
+      setCheckoutNotice({
+        status: checkoutParam,
+        type: typeParam,
+        domain: domainParam ?? undefined,
+      });
+    }
+
+    if (typeParam === 'domain' && domainParam && checkoutParam === 'success') {
+      setPurchasedDomain(domainParam);
+    }
+
+    if (checkoutParam) {
+      params.delete('checkout');
+      params.delete('type');
+      params.delete('domain');
+      const newSearch = params.toString();
+      const nextUrl = `${window.location.pathname}${newSearch ? `?${newSearch}` : ''}`;
+      if (nextUrl !== `${window.location.pathname}${window.location.search}`) {
+        window.history.replaceState({}, '', nextUrl);
+        setCurrentSearch(window.location.search);
+      }
+    }
+  }, [currentSearch, currentPath]);
+
+  useEffect(() => {
+    if (!checkoutNotice) return;
+    const timeout = window.setTimeout(() => {
+      setCheckoutNotice(null);
+    }, 3000);
+    return () => window.clearTimeout(timeout);
+  }, [checkoutNotice]);
+
+  useEffect(() => {
+    if (currentPath !== '/') return;
+    const params = new URLSearchParams(currentSearch);
+    params.set('step', activeStep);
+    if (activeStep === 'landing') {
+      params.set('substep', String(landingSubStep));
+    } else if (activeStep === 'ads') {
+      params.set('substep', String(adsSubStep));
+    } else {
+      params.delete('substep');
+    }
+
+    const newSearch = params.toString();
+    const nextUrl = `${window.location.pathname}${newSearch ? `?${newSearch}` : ''}`;
+    if (nextUrl !== `${window.location.pathname}${window.location.search}`) {
+      window.history.replaceState({}, '', nextUrl);
+      setCurrentSearch(window.location.search);
+    }
+  }, [activeStep, landingSubStep, adsSubStep, currentSearch, currentPath]);
+
+  useEffect(() => {
     const loadSession = async () => {
       const { data } = await supabase.auth.getSession();
       const session = data.session;
@@ -153,7 +245,7 @@ export default function App() {
     { id: 'landing' as const, icon: LayoutDashboard, label: 'Create Landing Page' },
     { id: 'ads' as const, icon: Megaphone, label: 'Setup Meta Ads' },
     { id: 'email' as const, icon: Mail, label: 'Setup Email Receiving', optional: true },
-    { id: 'results' as const, icon: BarChart3, label: 'Analyze Results' },
+    { id: 'results' as const, icon: BarChart3, label: 'Get your TruSignal' },
   ];
 
   if (currentPath === '/mydata') {
@@ -231,7 +323,14 @@ export default function App() {
                   aria-label={`Step ${index + 1}: ${step.label}`}
                   title={`Step ${index + 1}: ${step.label}`}
                 >
-                  <step.icon className="w-5 h-5" />
+                  <div className="relative">
+                    <step.icon className="w-5 h-5" />
+                    {step.id === 'landing' && landingCompleted && (
+                      <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center border border-emerald-300/30">
+                        <Check className="w-3 h-3 text-white" />
+                      </span>
+                    )}
+                  </div>
                   {!isSidebarCollapsed && (
                     <div>
                       <div className="text-xs text-gray-500">
@@ -291,6 +390,10 @@ export default function App() {
                 customDomain={customDomain}
                 setCustomDomain={setCustomDomain}
                 setActiveStep={setActiveStep}
+                setLandingCompleted={setLandingCompleted}
+                domainCheckoutStatus={checkoutNotice?.type === 'domain' ? checkoutNotice.status : null}
+                purchasedDomain={purchasedDomain}
+                onDismissDomainCheckoutNotice={() => setCheckoutNotice(null)}
               />
             )}
 
@@ -333,6 +436,8 @@ export default function App() {
                 adDurationDays={adDurationDays}
                 setAdDurationDays={setAdDurationDays}
                 setActiveStep={setActiveStep}
+                adsCheckoutStatus={checkoutNotice?.type === 'ads' ? checkoutNotice.status : null}
+                onDismissAdsCheckoutNotice={() => setCheckoutNotice(null)}
               />
             )}
 

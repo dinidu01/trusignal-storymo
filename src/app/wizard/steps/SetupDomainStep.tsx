@@ -46,7 +46,7 @@ export function SetupDomainStep({
             </div>
             <p className="text-gray-400 text-lg ml-10">
               Your landing page will be hosted at{' '}
-              <span className="text-indigo-400 font-mono">app.trusignal.tech/your-idea</span>
+              <span className="text-indigo-400 font-mono">app.trusignal.space/your-idea</span>
             </p>
             <p className="text-gray-500 text-sm ml-10 mt-2">Quick setup • No DNS configuration needed</p>
           </button>
