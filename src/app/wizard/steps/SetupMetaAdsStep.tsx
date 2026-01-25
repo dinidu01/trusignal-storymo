@@ -178,6 +178,16 @@ export function SetupMetaAdsStep({
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [metaAccessToken, setMetaAccessToken] = useState<string | null>(null);
   const [suggestedSubdomain, setSuggestedSubdomain] = useState<string | null>(null);
+  const [persistedFacebookPage, setPersistedFacebookPage] = useState<{
+    id?: string;
+    name?: string;
+    link?: string;
+  } | null>(null);
+  const [persistedInstagramPage, setPersistedInstagramPage] = useState<{
+    id?: string;
+    username?: string;
+    url?: string;
+  } | null>(null);
 
   const sdkLoadPromiseRef = useRef<Promise<void> | null>(null);
   const shouldFetchInstagramAccountsRef = useRef(false);
@@ -417,18 +427,46 @@ export function SetupMetaAdsStep({
     return instagramBusinessAccounts.filter((account) => account.username.toLowerCase().includes(normalizedQuery));
   }, [instagramBusinessAccounts, instagramAccountQuery]);
 
-  const selectedFacebookPage = useMemo(
-    () => facebookPages.find((page) => page.link && page.link === facebookPageUrl),
-    [facebookPages, facebookPageUrl]
-  );
+  const selectedFacebookPage = useMemo(() => {
+    const matched = facebookPages.find((page) => page.link && page.link === facebookPageUrl);
+    if (matched) return matched;
+    if (persistedFacebookPage?.id) {
+      return {
+        id: persistedFacebookPage.id,
+        name: persistedFacebookPage.name ?? 'Selected Page',
+        link: persistedFacebookPage.link,
+      };
+    }
+    return undefined;
+  }, [facebookPages, facebookPageUrl, persistedFacebookPage]);
 
   const selectedInstagramAccount = useMemo(() => {
     const normalizedUrl = instagramPageUrl.trim().replace(/\/+$/, '');
-    if (!normalizedUrl) return undefined;
-    return instagramBusinessAccounts.find(
-      (account) => `https://instagram.com/${account.username}` === normalizedUrl
+    if (!normalizedUrl) {
+      if (persistedInstagramPage?.id) {
+        return {
+          id: persistedInstagramPage.id,
+          username: persistedInstagramPage.username ?? 'selected',
+          profilePictureUrl: undefined,
+          connectedFacebookPageId: persistedFacebookPage?.id ?? '',
+        };
+      }
+      return undefined;
+    }
+    return (
+      instagramBusinessAccounts.find(
+        (account) => `https://instagram.com/${account.username}` === normalizedUrl
+      ) ??
+      (persistedInstagramPage?.id
+        ? {
+            id: persistedInstagramPage.id,
+            username: persistedInstagramPage.username ?? 'selected',
+            profilePictureUrl: undefined,
+            connectedFacebookPageId: persistedFacebookPage?.id ?? '',
+          }
+        : undefined)
     );
-  }, [instagramBusinessAccounts, instagramPageUrl]);
+  }, [instagramBusinessAccounts, instagramPageUrl, persistedFacebookPage, persistedInstagramPage]);
 
   const ideaSlug =
     ideaDescription
@@ -470,6 +508,22 @@ export function SetupMetaAdsStep({
 
       if (metaInstagram?.url && !instagramPageUrl) {
         setInstagramPageUrl(String(metaInstagram.url));
+      }
+
+      if (metaFacebook) {
+        setPersistedFacebookPage({
+          id: metaFacebook.id ? String(metaFacebook.id) : undefined,
+          name: metaFacebook.name ? String(metaFacebook.name) : undefined,
+          link: metaFacebook.link ? String(metaFacebook.link) : undefined,
+        });
+      }
+
+      if (metaInstagram) {
+        setPersistedInstagramPage({
+          id: metaInstagram.id ? String(metaInstagram.id) : undefined,
+          username: metaInstagram.username ? String(metaInstagram.username) : undefined,
+          url: metaInstagram.url ? String(metaInstagram.url) : undefined,
+        });
       }
 
       if (metaCreativePath && !adImageUrl) {
@@ -542,6 +596,8 @@ export function SetupMetaAdsStep({
     instagramPageUrl,
     selectedFacebookPage,
     selectedInstagramAccount,
+    persistedFacebookPage,
+    persistedInstagramPage,
   ]);
 
   const availableCountries = [
@@ -773,7 +829,8 @@ export function SetupMetaAdsStep({
         throw new Error('Missing idea id.');
       }
 
-      if (!selectedFacebookPage?.id) {
+      const launchFacebookPageId = selectedFacebookPage?.id ?? persistedFacebookPage?.id;
+      if (!launchFacebookPageId) {
         throw new Error('Select a Facebook page to launch the ad campaign.');
       }
 
@@ -808,8 +865,8 @@ export function SetupMetaAdsStep({
       const { error } = await supabase.functions.invoke('create-meta-campaign', {
         body: {
           ideaId,
-          pageId: selectedFacebookPage.id,
-          instagramActorId: selectedInstagramAccount?.id,
+          pageId: launchFacebookPageId,
+          instagramActorId: selectedInstagramAccount?.id ?? persistedInstagramPage?.id,
           destinationUrl,
           adImageUrl: adImageUrl.trim(),
           adHeadline: adHeadline.trim(),
