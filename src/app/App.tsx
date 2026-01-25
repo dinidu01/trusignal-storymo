@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Check, ArrowRight, TrendingUp, Clock, DollarSign, Target, X, LayoutDashboard, Megaphone, BarChart3, Plus, Lightbulb, Upload, Sparkles, Mail, Settings, ChevronLeft, ChevronRight } from 'lucide-react';
 import { MyDataPage } from '../pages/MyDataPage';
 import { PrivacyPage } from '../pages/PrivacyPage';
@@ -32,6 +32,17 @@ export default function App() {
   const [instagramPageUrl, setInstagramPageUrl] = useState('');
   const [wantsEmailReceiving, setWantsEmailReceiving] = useState<boolean | null>(null);
   const [receivingEmail, setReceivingEmail] = useState('');
+  const [ideaId, setIdeaId] = useState<string | null>(null);
+  const [ideas, setIdeas] = useState<Array<{
+    id: string;
+    idea_text: string;
+    target_audience?: string | null;
+    problem_solved?: string | null;
+    research_data?: unknown | null;
+    metadata?: Record<string, unknown> | null;
+    created_at?: string | null;
+  }>>([]);
+  const [isIdeasLoading, setIsIdeasLoading] = useState(false);
 
   const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
   const [currentSearch, setCurrentSearch] = useState(() => window.location.search);
@@ -50,6 +61,14 @@ export default function App() {
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
+
+  useEffect(() => {
+    if (ideaId) return;
+    const storedIdeaId = localStorage.getItem('trusignal.ideaId');
+    if (storedIdeaId) {
+      setIdeaId(storedIdeaId);
+    }
+  }, [ideaId]);
 
   const navigate = (path: string) => {
     if (path === currentPath) return;
@@ -232,6 +251,74 @@ export default function App() {
     return () => data.subscription.unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (!isLoggedIn || !supabase) return;
+    const loadIdeas = async () => {
+      setIsIdeasLoading(true);
+      const { data, error } = await supabase
+        .from('ideas')
+        .select('id,idea_text,target_audience,problem_solved,research_data,metadata,created_at')
+        .order('created_at', { ascending: false });
+      if (!error && Array.isArray(data)) {
+        setIdeas(data);
+        if (!ideaId && data.length > 0) {
+          selectIdea(data[0]);
+        }
+      }
+      setIsIdeasLoading(false);
+    };
+
+    void loadIdeas();
+  }, [ideaId, isLoggedIn]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !supabase) return;
+    const pendingIdea = localStorage.getItem('trusignal.pendingIdea');
+    if (!pendingIdea) return;
+    if (ideaId) {
+      localStorage.removeItem('trusignal.pendingIdea');
+      return;
+    }
+
+    const createIdea = async () => {
+      const { data, error } = await supabase
+        .from('ideas')
+        .insert({
+          idea_text: pendingIdea,
+          metadata: { source: 'preauth' },
+        })
+        .select('id,idea_text,target_audience,problem_solved,research_data,metadata,created_at')
+        .single();
+
+      if (!error && data) {
+        setIdeas((prev) => [data, ...prev.filter((item) => item.id !== data.id)]);
+        selectIdea(data);
+      }
+
+      localStorage.removeItem('trusignal.pendingIdea');
+    };
+
+    void createIdea();
+  }, [ideaId, isLoggedIn]);
+
+  useEffect(() => {
+    if (!ideaId || !supabase) return;
+    if (ideas.some((idea) => idea.id === ideaId)) return;
+
+    const loadIdea = async () => {
+      const { data, error } = await supabase
+        .from('ideas')
+        .select('id,idea_text,target_audience,problem_solved,research_data,metadata,created_at')
+        .eq('id', ideaId)
+        .single();
+      if (!error && data) {
+        setIdeas((prev) => [data, ...prev.filter((item) => item.id !== data.id)]);
+      }
+    };
+
+    void loadIdea();
+  }, [ideaId, ideas, supabase]);
+
   const toggleQuestion = (index: number) => {
     setActiveQuestion(activeQuestion === index ? null : index);
   };
@@ -244,12 +331,57 @@ export default function App() {
     setIsLoggedIn(false);
   };
 
+  const persistIdeaInputs = (nextIdea: string, nextAudience = '', nextProblem = '') => {
+    localStorage.setItem(
+      'trusignal.ideaInputs',
+      JSON.stringify({
+        ideaDescription: nextIdea,
+        targetAudience: nextAudience,
+        problemSolved: nextProblem,
+      })
+    );
+  };
+
+  const selectIdea = (idea: {
+    id: string;
+    idea_text: string;
+    target_audience?: string | null;
+    problem_solved?: string | null;
+    research_data?: unknown | null;
+    metadata?: Record<string, unknown> | null;
+  }) => {
+    const nextIdeaText = idea.idea_text ?? '';
+    const nextAudience = idea.target_audience ?? '';
+    const nextProblem = idea.problem_solved ?? '';
+
+    setIdeaId(idea.id);
+    localStorage.setItem('trusignal.ideaId', idea.id);
+    setIdeaDescription(nextIdeaText);
+    setTargetAudience(nextAudience);
+    setProblemSolved(nextProblem);
+    persistIdeaInputs(nextIdeaText, nextAudience, nextProblem);
+
+    if (idea.research_data) {
+      localStorage.setItem('trusignal.analyzeIdea', JSON.stringify(idea.research_data));
+    }
+
+    const suggestedSubdomain = idea.metadata?.suggested_subdomain;
+    if (typeof suggestedSubdomain === 'string' && suggestedSubdomain.trim()) {
+      localStorage.setItem('trusignal.suggestedSubdomain', suggestedSubdomain.trim());
+    }
+
+    setActiveStep('landing');
+    setLandingSubStep(1);
+  };
+
   const steps = [
     { id: 'landing' as const, icon: LayoutDashboard, label: 'Create Landing Page' },
     { id: 'ads' as const, icon: Megaphone, label: 'Setup Meta Ads' },
     { id: 'email' as const, icon: Mail, label: 'Setup Email Receiving', optional: true },
     { id: 'results' as const, icon: BarChart3, label: 'Get your TruSignal' },
   ];
+
+  const activeIdea = useMemo(() => ideas.find((idea) => idea.id === ideaId) ?? null, [ideaId, ideas]);
 
   if (currentPath === '/mydata') {
     return <MyDataPage navigate={navigate} />;
@@ -313,38 +445,77 @@ export default function App() {
               {!isSidebarCollapsed && 'New Idea'}
             </button>
 
-            <div className="space-y-2">
-              {steps.map((step, index) => (
-                <button
-                  key={step.id}
-                  onClick={() => setActiveStep(step.id)}
-                  className={`w-full rounded-lg flex items-center gap-3 transition-colors ${
-                    activeStep === step.id
-                      ? 'bg-indigo-600 text-white'
-                      : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-                  } ${isSidebarCollapsed ? 'px-2 py-3 justify-center' : 'px-4 py-3 text-left'}`}
-                  aria-label={`Step ${index + 1}: ${step.label}`}
-                  title={`Step ${index + 1}: ${step.label}`}
-                >
-                  <div className="relative">
-                    <step.icon className="w-5 h-5" />
-                    {step.id === 'landing' && landingCompleted && (
-                      <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center border border-emerald-300/30">
-                        <Check className="w-3 h-3 text-white" />
-                      </span>
+            <div className="space-y-4">
+              {!isSidebarCollapsed && (
+                <div className="text-xs uppercase tracking-wide text-gray-500">Ideas</div>
+              )}
+              <div className="space-y-2">
+                {isIdeasLoading && !isSidebarCollapsed && (
+                  <div className="text-sm text-gray-500 px-2">Loading ideas...</div>
+                )}
+                {!isIdeasLoading && ideas.length === 0 && !isSidebarCollapsed && (
+                  <div className="text-sm text-gray-500 px-2">No ideas yet.</div>
+                )}
+                {ideas.map((idea) => (
+                  <button
+                    key={idea.id}
+                    onClick={() => selectIdea(idea)}
+                    className={`w-full rounded-lg flex items-center gap-3 transition-colors ${
+                      ideaId === idea.id
+                        ? 'bg-indigo-600/20 text-white border border-indigo-500/40'
+                        : 'text-gray-400 hover:bg-gray-800 hover:text-white border border-transparent'
+                    } ${isSidebarCollapsed ? 'px-2 py-3 justify-center' : 'px-3 py-2 text-left'}`}
+                    aria-label={`Idea ${idea.idea_text}`}
+                    title={idea.idea_text}
+                  >
+                    <div className="w-2 h-2 rounded-full bg-indigo-400"></div>
+                    {!isSidebarCollapsed && (
+                      <div className="text-sm font-medium truncate">{idea.idea_text || 'Untitled idea'}</div>
                     )}
-                  </div>
+                  </button>
+                ))}
+              </div>
+
+              {activeIdea && (
+                <div className={`${isSidebarCollapsed ? '' : 'ml-2 border-l border-gray-800 pl-3'}`}>
                   {!isSidebarCollapsed && (
-                    <div>
-                      <div className="text-xs text-gray-500">
-                        Step {index + 1}
-                        {step.optional ? ' (Optional)' : ''}
-                      </div>
-                      <div className="font-medium">{step.label}</div>
-                    </div>
+                    <div className="text-xs uppercase tracking-wide text-gray-500 mb-2">Steps</div>
                   )}
-                </button>
-              ))}
+                  <div className="space-y-2">
+                    {steps.map((step, index) => (
+                      <button
+                        key={step.id}
+                        onClick={() => setActiveStep(step.id)}
+                        className={`w-full rounded-lg flex items-center gap-3 transition-colors ${
+                          activeStep === step.id
+                            ? 'bg-indigo-600 text-white'
+                            : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                        } ${isSidebarCollapsed ? 'px-2 py-3 justify-center' : 'px-4 py-3 text-left'}`}
+                        aria-label={`Step ${index + 1}: ${step.label}`}
+                        title={`Step ${index + 1}: ${step.label}`}
+                      >
+                        <div className="relative">
+                          <step.icon className="w-5 h-5" />
+                          {step.id === 'landing' && landingCompleted && (
+                            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center border border-emerald-300/30">
+                              <Check className="w-3 h-3 text-white" />
+                            </span>
+                          )}
+                        </div>
+                        {!isSidebarCollapsed && (
+                          <div>
+                            <div className="text-xs text-gray-500">
+                              Step {index + 1}
+                              {step.optional ? ' (Optional)' : ''}
+                            </div>
+                            <div className="font-medium">{step.label}</div>
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -397,6 +568,8 @@ export default function App() {
                 domainCheckoutStatus={checkoutNotice?.type === 'domain' ? checkoutNotice.status : null}
                 purchasedDomain={purchasedDomain}
                 onDismissDomainCheckoutNotice={() => setCheckoutNotice(null)}
+                ideaId={ideaId}
+                setIdeaId={setIdeaId}
               />
             )}
 
@@ -450,6 +623,7 @@ export default function App() {
                 setActiveStep={setActiveStep}
                 adsCheckoutStatus={checkoutNotice?.type === 'ads' ? checkoutNotice.status : null}
                 onDismissAdsCheckoutNotice={() => setCheckoutNotice(null)}
+                ideaId={ideaId}
               />
             )}
 
@@ -495,8 +669,31 @@ export default function App() {
                 />
                 <button
                   onClick={() => {
+                    const nextIdea = ideaInput.trim();
+                    if (!nextIdea) return;
                     setShowNewIdeaInput(false);
                     setActiveStep('landing');
+                    setLandingSubStep(1);
+                    setIdeaDescription(nextIdea);
+                    setTargetAudience('');
+                    setProblemSolved('');
+                    persistIdeaInputs(nextIdea, '', '');
+                    localStorage.removeItem('trusignal.analyzeIdea');
+
+                    const createIdea = async () => {
+                      const { data, error } = await supabase
+                        .from('ideas')
+                        .insert({ idea_text: nextIdea, metadata: { source: 'new-idea' } })
+                        .select('id,idea_text,target_audience,problem_solved,research_data,metadata,created_at')
+                        .single();
+
+                      if (!error && data) {
+                        setIdeas((prev) => [data, ...prev.filter((item) => item.id !== data.id)]);
+                        selectIdea(data);
+                      }
+                    };
+
+                    void createIdea();
                   }}
                   className="absolute right-2 top-1/2 -translate-y-1/2 p-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
                 >
@@ -564,7 +761,15 @@ export default function App() {
           <div className="text-2xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
             TruSignal
           </div>
-          <button className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium" onClick={() => setShowAuthModal(true)}>
+          <button
+            className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium"
+            onClick={() => {
+              if (heroIdeaText.trim()) {
+                localStorage.setItem('trusignal.pendingIdea', heroIdeaText.trim());
+              }
+              setShowAuthModal(true);
+            }}
+          >
             Validate Idea
           </button>
         </div>
@@ -588,7 +793,15 @@ export default function App() {
                 value={heroIdeaText}
                 onChange={(e) => setHeroIdeaText(e.target.value)}
               />
-              <button className="absolute right-2 top-1/2 -translate-y-1/2 p-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-600/25" onClick={() => setShowAuthModal(true)}>
+              <button
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-600/25"
+                onClick={() => {
+                  if (heroIdeaText.trim()) {
+                    localStorage.setItem('trusignal.pendingIdea', heroIdeaText.trim());
+                  }
+                  setShowAuthModal(true);
+                }}
+              >
                 <ArrowRight className="w-6 h-6" />
               </button>
             </div>

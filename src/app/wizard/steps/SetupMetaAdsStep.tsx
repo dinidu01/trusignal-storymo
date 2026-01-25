@@ -49,6 +49,7 @@ type SetupMetaAdsStepProps = {
   setActiveStep: (step: 'landing' | 'domain' | 'ads' | 'email' | 'results') => void;
   adsCheckoutStatus: 'success' | 'cancel' | null;
   onDismissAdsCheckoutNotice: () => void;
+  ideaId: string | null;
 };
 
 declare global {
@@ -142,6 +143,7 @@ export function SetupMetaAdsStep({
   setActiveStep,
   adsCheckoutStatus,
   onDismissAdsCheckoutNotice,
+  ideaId,
 }: SetupMetaAdsStepProps) {
   const facebookAppId = import.meta.env.VITE_FACEBOOK_APP_ID as string | undefined;
 
@@ -174,10 +176,13 @@ export function SetupMetaAdsStep({
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [isLaunchingCampaign, setIsLaunchingCampaign] = useState(false);
   const [launchError, setLaunchError] = useState<string | null>(null);
+  const [metaAccessToken, setMetaAccessToken] = useState<string | null>(null);
+  const [suggestedSubdomain, setSuggestedSubdomain] = useState<string | null>(null);
 
   const sdkLoadPromiseRef = useRef<Promise<void> | null>(null);
   const shouldFetchInstagramAccountsRef = useRef(false);
   const hasTriggeredLaunchRef = useRef(false);
+  const lastSavedMetaRef = useRef<string | null>(null);
 
   const ensureFacebookSdkLoaded = async () => {
     if (!facebookAppId) {
@@ -250,9 +255,12 @@ export function SetupMetaAdsStep({
     window.FB.login(
       (response) => {
         if (response?.authResponse?.accessToken) {
+          const accessToken = response.authResponse.accessToken;
+          setMetaAccessToken(accessToken);
+          localStorage.setItem('trusignal.metaAccessToken', accessToken);
           setMetaAuthStatus('connected');
-          fetchFacebookUserProfile();
-          fetchManagedFacebookPages();
+          fetchFacebookUserProfile(accessToken);
+          fetchManagedFacebookPages(accessToken);
           return;
         }
 
@@ -269,7 +277,7 @@ export function SetupMetaAdsStep({
     await connectMetaAccount('public_profile,pages_show_list,instagram_basic');
   };
 
-  const fetchFacebookUserProfile = () => {
+  const fetchFacebookUserProfile = (accessToken?: string) => {
     if (!window.FB) return;
 
     window.FB.api(
@@ -277,6 +285,7 @@ export function SetupMetaAdsStep({
       'GET',
       {
         fields: 'name,picture{url}',
+        access_token: accessToken,
       },
       (response) => {
         if (!response?.name) {
@@ -303,10 +312,12 @@ export function SetupMetaAdsStep({
       setInstagramAccountQuery('');
       setShowMetaAccountMenu(false);
       setMetaErrorMessage(null);
+      setMetaAccessToken(null);
+      localStorage.removeItem('trusignal.metaAccessToken');
     });
   };
 
-  const fetchManagedFacebookPages = () => {
+  const fetchManagedFacebookPages = (accessToken?: string) => {
     if (!window.FB) return;
 
     window.FB.api(
@@ -314,6 +325,7 @@ export function SetupMetaAdsStep({
       'GET',
       {
         fields: 'id,name,link,picture{url}',
+        access_token: accessToken,
       },
       (response) => {
         const pages = Array.isArray(response?.data)
@@ -329,13 +341,13 @@ export function SetupMetaAdsStep({
 
         if (hasInstagramPage || shouldFetchInstagramAccountsRef.current) {
           shouldFetchInstagramAccountsRef.current = false;
-          fetchInstagramBusinessAccounts(pages);
+          fetchInstagramBusinessAccounts(pages, accessToken);
         }
       }
     );
   };
 
-  const fetchInstagramBusinessAccounts = (pages: FacebookPage[]) => {
+  const fetchInstagramBusinessAccounts = (pages: FacebookPage[], accessToken?: string) => {
     if (!window.FB) return;
 
     const requests = pages.map(
@@ -346,6 +358,7 @@ export function SetupMetaAdsStep({
             'GET',
             {
               fields: 'instagram_business_account{username,id,profile_picture_url}',
+              access_token: accessToken,
             },
             (response) => {
               const ig = response?.instagram_business_account;
@@ -369,6 +382,28 @@ export function SetupMetaAdsStep({
       setInstagramBusinessAccounts(accounts.filter(Boolean) as InstagramBusinessAccount[]);
     });
   };
+
+  useEffect(() => {
+    if (metaAccessToken) return;
+    const storedToken = localStorage.getItem('trusignal.metaAccessToken');
+    if (storedToken) {
+      setMetaAccessToken(storedToken);
+    }
+  }, [metaAccessToken]);
+
+  useEffect(() => {
+    if (!metaAccessToken) return;
+
+    const hydrateMetaSession = async () => {
+      const sdkReady = await ensureFacebookSdkLoaded();
+      if (!sdkReady || !window.FB) return;
+      setMetaAuthStatus('connected');
+      fetchFacebookUserProfile(metaAccessToken);
+      fetchManagedFacebookPages(metaAccessToken);
+    };
+
+    void hydrateMetaSession();
+  }, [metaAccessToken]);
 
   const filteredFacebookPages = useMemo(() => {
     const normalizedQuery = facebookPageQuery.trim().toLowerCase();
@@ -407,7 +442,7 @@ export function SetupMetaAdsStep({
 
   const landingDomain =
     domainChoice === 'trusignal'
-      ? `app.trusignal.space/${ideaSlug}`
+      ? `${suggestedSubdomain ?? ideaSlug}.trusignal.space`
       : domainChoice === 'custom'
         ? (purchasedDomain ?? customDomain).trim()
         : '';
@@ -417,6 +452,86 @@ export function SetupMetaAdsStep({
       ? landingDomain
       : `https://${landingDomain}`
     : '';
+
+  useEffect(() => {
+    if (!ideaId) return;
+
+    const loadIdeaMeta = async () => {
+      const { data, error } = await supabase.from('ideas').select('metadata').eq('id', ideaId).single();
+      if (error || !data?.metadata) return;
+
+      const metaFacebook = data.metadata?.meta_facebook_page;
+      const metaInstagram = data.metadata?.meta_instagram_page;
+
+      if (metaFacebook?.link && !facebookPageUrl) {
+        setFacebookPageUrl(String(metaFacebook.link));
+      }
+
+      if (metaInstagram?.url && !instagramPageUrl) {
+        setInstagramPageUrl(String(metaInstagram.url));
+      }
+    };
+
+    void loadIdeaMeta();
+  }, [facebookPageUrl, ideaId, instagramPageUrl, setFacebookPageUrl, setInstagramPageUrl]);
+
+  useEffect(() => {
+    if (suggestedSubdomain) return;
+    const stored = localStorage.getItem('trusignal.suggestedSubdomain');
+    if (stored) {
+      setSuggestedSubdomain(stored);
+    }
+  }, [suggestedSubdomain]);
+
+  useEffect(() => {
+    if (!ideaId) return;
+
+    const facebookPayload = selectedFacebookPage
+      ? {
+          id: selectedFacebookPage.id,
+          name: selectedFacebookPage.name,
+          link: selectedFacebookPage.link ?? facebookPageUrl,
+        }
+      : facebookPageUrl
+        ? { link: facebookPageUrl }
+        : undefined;
+
+    const instagramPayload = selectedInstagramAccount
+      ? {
+          id: selectedInstagramAccount.id,
+          username: selectedInstagramAccount.username,
+          url: `https://instagram.com/${selectedInstagramAccount.username}`,
+        }
+      : instagramPageUrl
+        ? { url: instagramPageUrl }
+        : undefined;
+
+    if (!facebookPayload && !instagramPayload) return;
+
+    const payload = {
+      idea_id: ideaId,
+      facebook_page: facebookPayload,
+      instagram_page: instagramPayload,
+    };
+
+    const payloadKey = JSON.stringify(payload);
+    if (payloadKey === lastSavedMetaRef.current) return;
+    lastSavedMetaRef.current = payloadKey;
+
+    const persistMeta = async () => {
+      await supabase.functions.invoke('save-meta-pages', {
+        body: payload,
+      });
+    };
+
+    void persistMeta();
+  }, [
+    facebookPageUrl,
+    ideaId,
+    instagramPageUrl,
+    selectedFacebookPage,
+    selectedInstagramAccount,
+  ]);
 
   const availableCountries = [
     { name: 'United States', flag: '🇺🇸' },
@@ -643,6 +758,10 @@ export function SetupMetaAdsStep({
     hasTriggeredLaunchRef.current = true;
 
     try {
+      if (!ideaId) {
+        throw new Error('Missing idea id.');
+      }
+
       if (!selectedFacebookPage?.id) {
         throw new Error('Select a Facebook page to launch the ad campaign.');
       }
@@ -677,6 +796,7 @@ export function SetupMetaAdsStep({
 
       const { error } = await supabase.functions.invoke('create-meta-campaign', {
         body: {
+          ideaId,
           pageId: selectedFacebookPage.id,
           instagramActorId: selectedInstagramAccount?.id,
           destinationUrl,

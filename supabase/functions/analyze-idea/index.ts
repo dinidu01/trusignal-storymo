@@ -48,6 +48,7 @@ const buildSchema = (segmentCount: number) => {
     type: "object",
     additionalProperties: false,
     properties: {
+      suggested_subdomain: { type: "string" },
       segments: {
         type: "array",
         minItems: segmentCount,
@@ -55,7 +56,7 @@ const buildSchema = (segmentCount: number) => {
         items: segmentSchema,
       },
     },
-    required: ["segments"],
+    required: ["suggested_subdomain", "segments"],
   };
 };
 
@@ -76,6 +77,7 @@ const clampSegmentCount = (value: unknown) => {
 // }
 // Response format (JSON):
 // {
+//   "suggested_subdomain": "string",
 //   "segments": [
 //     {
 //       "segment_name": "string",
@@ -150,6 +152,7 @@ Deno.serve(async (req) => {
     `Target audience (base): ${audience}`,
     `Problem to solve (base): ${problem}`,
     `Generate ${segmentCount} audience segments.`,
+    `Also suggest a short subdomain (2-16 chars, lowercase letters/numbers, no spaces) for ${idea}.`,
     `For each segment, return: segment_name, audience, problem, facebook_page_bio, instagram_page_bio,`,
     `meta_ad_headlines (3), meta_ad_descriptions (3), facebook_ad_campaign_texts (3).`,
     `facebook_ad_campaign_texts must follow the format: "[Target audience]! [a compelling pain point]"`,
@@ -225,7 +228,80 @@ Deno.serve(async (req) => {
 
   try {
     const json = JSON.parse(outputText);
-    return new Response(JSON.stringify(json), {
+
+    const authHeader = req.headers.get("authorization");
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: "Missing Authorization header" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return new Response(JSON.stringify({ error: "Missing SUPABASE_URL or SUPABASE_ANON_KEY" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+    const userResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        apikey: supabaseAnonKey,
+      },
+    });
+
+    if (!userResponse.ok) {
+      return new Response(JSON.stringify({ error: "Unable to resolve user" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const userData = await userResponse.json();
+    const userId = userData?.id ? String(userData.id) : null;
+    if (!userId) {
+      return new Response(JSON.stringify({ error: "Missing user id" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const insertResponse = await fetch(`${supabaseUrl}/rest/v1/ideas`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        apikey: supabaseAnonKey,
+        "Content-Type": "application/json",
+        Prefer: "return=representation",
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        idea_text: idea,
+        target_audience: audience,
+        problem_solved: problem,
+        research_data: json,
+        metadata: {
+          segment_count: segmentCount,
+          suggested_subdomain: json?.suggested_subdomain ?? null,
+        },
+      }),
+    });
+
+    if (!insertResponse.ok) {
+      return new Response(JSON.stringify({ error: "Failed to store idea analysis" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const inserted = await insertResponse.json();
+    const ideaId = Array.isArray(inserted) ? inserted[0]?.id : null;
+
+    return new Response(JSON.stringify({ ...json, idea_id: ideaId }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (_error) {

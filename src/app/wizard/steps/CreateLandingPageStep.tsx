@@ -1,5 +1,5 @@
 import { CheckCircle2, Eye, ExternalLink, Lightbulb, Loader2, Rocket, X, Zap } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../../lib/supabaseClient';
 
 type CreateLandingPageStepProps = {
@@ -22,6 +22,8 @@ type CreateLandingPageStepProps = {
   domainCheckoutStatus: 'success' | 'cancel' | null;
   purchasedDomain: string | null;
   onDismissDomainCheckoutNotice: () => void;
+  ideaId: string | null;
+  setIdeaId: (value: string | null) => void;
 };
 
 export function CreateLandingPageStep({
@@ -44,6 +46,8 @@ export function CreateLandingPageStep({
   domainCheckoutStatus,
   purchasedDomain,
   onDismissDomainCheckoutNotice,
+  ideaId,
+  setIdeaId,
 }: CreateLandingPageStepProps) {
   const [previewTemplateId, setPreviewTemplateId] = useState<string | null>(null);
   const [customDomainMode, setCustomDomainMode] = useState<'have' | 'buy' | null>(null);
@@ -54,6 +58,8 @@ export function CreateLandingPageStep({
   const [researchError, setResearchError] = useState<string | null>(null);
   const [isBuyingDomain, setIsBuyingDomain] = useState(false);
   const [buyDomainError, setBuyDomainError] = useState<string | null>(null);
+  const hasHydratedInputsRef = useRef(false);
+  const [suggestedSubdomain, setSuggestedSubdomain] = useState<string | null>(null);
 
   const ideaSlug =
     ideaDescription
@@ -80,9 +86,11 @@ export function CreateLandingPageStep({
 
   const cheapestPrice = Math.min(...domainPurchaseOptions.map((o) => o.price));
 
+  const trusignalSubdomain = suggestedSubdomain ?? ideaSlug;
+
   const selectedDomain =
     domainChoice === 'trusignal'
-      ? `app.trusignal.space/${ideaSlug}`
+      ? `${trusignalSubdomain}.trusignal.space`
       : domainChoice === 'custom'
         ? customDomainMode === 'have'
           ? customDomain.trim()
@@ -141,6 +149,7 @@ export function CreateLandingPageStep({
   }, [purchasedDomain, setDomainChoice]);
 
   useEffect(() => {
+    if (hasHydratedInputsRef.current) return;
     const stored = localStorage.getItem('trusignal.ideaInputs');
     if (!stored) return;
 
@@ -162,10 +171,20 @@ export function CreateLandingPageStep({
       if (!problemSolved && parsed.problemSolved) {
         setProblemSolved(parsed.problemSolved);
       }
+
+      hasHydratedInputsRef.current = true;
     } catch (_error) {
       // Ignore stored data errors.
     }
   }, [ideaDescription, targetAudience, problemSolved, setIdeaDescription, setProblemSolved, setTargetAudience]);
+
+  useEffect(() => {
+    if (suggestedSubdomain) return;
+    const stored = localStorage.getItem('trusignal.suggestedSubdomain');
+    if (stored) {
+      setSuggestedSubdomain(stored);
+    }
+  }, [suggestedSubdomain]);
 
   useEffect(() => {
     const payload = {
@@ -254,6 +273,17 @@ export function CreateLandingPageStep({
 
       if (error) {
         throw error;
+      }
+
+      if (data?.suggested_subdomain) {
+        const subdomain = String(data.suggested_subdomain);
+        localStorage.setItem('trusignal.suggestedSubdomain', subdomain);
+        setSuggestedSubdomain(subdomain);
+      }
+
+      if (data?.idea_id) {
+        localStorage.setItem('trusignal.ideaId', String(data.idea_id));
+        setIdeaId(String(data.idea_id));
       }
 
       localStorage.setItem('trusignal.analyzeIdea', JSON.stringify(data));
@@ -775,7 +805,7 @@ export function CreateLandingPageStep({
                     </div>
                     <p className="text-gray-400 text-lg ml-10">
                       Your landing page will be hosted at{' '}
-                      <span className="text-indigo-400 font-mono">app.trusignal.space/your-idea</span>
+                      <span className="text-indigo-400 font-mono">{trusignalSubdomain}.trusignal.space</span>
                     </p>
                     <p className="text-gray-500 text-sm ml-10 mt-2">Quick setup • No DNS configuration needed</p>
                   </button>
@@ -817,7 +847,7 @@ export function CreateLandingPageStep({
                     </div>
                     <p className="text-gray-400 text-lg ml-10">
                       Your landing page will be hosted at{' '}
-                      <span className="text-indigo-400 font-mono">app.trusignal.space/your-idea</span>
+                      <span className="text-indigo-400 font-mono">{trusignalSubdomain}.trusignal.space</span>
                     </p>
                     <p className="text-gray-500 text-sm ml-10 mt-2">Quick setup • No DNS configuration needed</p>
                   </button>

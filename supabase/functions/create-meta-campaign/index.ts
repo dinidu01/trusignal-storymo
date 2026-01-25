@@ -16,6 +16,7 @@ type LocalPlace = {
 };
 
 type LaunchPayload = {
+  ideaId: string;
   pageId: string;
   instagramActorId?: string;
   destinationUrl: string;
@@ -260,6 +261,7 @@ const buildTargeting = (payload: LaunchPayload) => {
  *
  * Request body (JSON):
  * {
+ *   "ideaId": "uuid",
  *   "pageId": "12345",
  *   "instagramActorId": "12345",
  *   "destinationUrl": "https://example.com",
@@ -298,7 +300,7 @@ const buildTargeting = (payload: LaunchPayload) => {
  * }
  *
  * Response errors (JSON):
- * - 400: { "error": "Invalid JSON payload" | "Missing pageId" | "Missing destinationUrl" | "Missing adImageUrl" }
+ * - 400: { "error": "Invalid JSON payload" | "Missing ideaId" | "Missing pageId" | "Missing destinationUrl" | "Missing adImageUrl" }
  * - 401: { "error": "Missing Authorization header" }
  * - 405: { "error": "Method not allowed" }
  * - 500: { "error": "Missing META_SYSTEM_USER_TOKEN" | "Missing META_AD_ACCOUNT_ID" | "Meta API request failed" | "Unknown error" | "..." }
@@ -356,6 +358,13 @@ Deno.serve(async (req) => {
     });
   }
 
+  if (!payload.ideaId?.trim()) {
+    return new Response(JSON.stringify({ error: "Missing ideaId" }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   if (!payload.destinationUrl?.trim()) {
     return new Response(JSON.stringify({ error: "Missing destinationUrl" }), {
       status: 400,
@@ -373,6 +382,62 @@ Deno.serve(async (req) => {
   const objective = payload.objective ?? "TRAFFIC";
 
   try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return new Response(JSON.stringify({ error: "Missing SUPABASE_URL or SUPABASE_ANON_KEY" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+    const userResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        apikey: supabaseAnonKey,
+      },
+    });
+
+    if (!userResponse.ok) {
+      return new Response(JSON.stringify({ error: "Unable to resolve user" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const userData = await userResponse.json();
+    const userId = userData?.id ? String(userData.id) : null;
+    if (!userId) {
+      return new Response(JSON.stringify({ error: "Missing user id" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const draftResponse = await fetch(`${supabaseUrl}/rest/v1/ad_campaigns`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        apikey: supabaseAnonKey,
+        "Content-Type": "application/json",
+        Prefer: "return=representation",
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        idea_id: payload.ideaId.trim(),
+        status: "draft",
+        meta_payload: payload,
+      }),
+    });
+
+    if (!draftResponse.ok) {
+      return new Response(JSON.stringify({ error: "Failed to store ad campaign draft" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const imageHash = await uploadAdImage(adAccountId, payload.adImageUrl, systemUserToken);
 
     const now = new Date();
