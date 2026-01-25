@@ -80,6 +80,9 @@ export default function App() {
   const [adAgeMin, setAdAgeMin] = useState(18);
   const [adAgeMax, setAdAgeMax] = useState(65);
   const [adCountries, setAdCountries] = useState<string[]>([]);
+  const [adLocationScope, setAdLocationScope] = useState<'local' | 'global'>('global');
+  const [adLocalPlace, setAdLocalPlace] = useState<{ label: string; lat: number; lon: number } | null>(null);
+  const [adGenders, setAdGenders] = useState<Array<'women' | 'men'>>(['women', 'men']);
   const [adBudgetPerDay, setAdBudgetPerDay] = useState<10 | 25 | 50 | null>(25);
   const [adDurationDays, setAdDurationDays] = useState<3 | 7 | 10 | null>(7);
 
@@ -425,12 +428,21 @@ export default function App() {
                 ideaDescription={ideaDescription}
                 targetAudience={targetAudience}
                 problemSolved={problemSolved}
+                domainChoice={domainChoice}
+                customDomain={customDomain}
+                purchasedDomain={purchasedDomain}
                 adAgeMin={adAgeMin}
                 setAdAgeMin={setAdAgeMin}
                 adAgeMax={adAgeMax}
                 setAdAgeMax={setAdAgeMax}
                 adCountries={adCountries}
                 setAdCountries={setAdCountries}
+                adLocationScope={adLocationScope}
+                setAdLocationScope={setAdLocationScope}
+                adLocalPlace={adLocalPlace}
+                setAdLocalPlace={setAdLocalPlace}
+                adGenders={adGenders}
+                setAdGenders={setAdGenders}
                 adBudgetPerDay={adBudgetPerDay}
                 setAdBudgetPerDay={setAdBudgetPerDay}
                 adDurationDays={adDurationDays}

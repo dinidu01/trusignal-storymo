@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronDown, Lightbulb, LogOut, Upload, Sparkles, Users, Wallet, X } from 'lucide-react';
+import { Check, ChevronDown, Lightbulb, LocateFixed, LogOut, Upload, Sparkles, Users, Wallet, X } from 'lucide-react';
 import { supabase } from '../../../lib/supabaseClient';
 
 type SetupMetaAdsStepProps = {
@@ -27,12 +27,21 @@ type SetupMetaAdsStepProps = {
   ideaDescription: string;
   targetAudience: string;
   problemSolved: string;
+  domainChoice: 'custom' | 'trusignal' | null;
+  customDomain: string;
+  purchasedDomain: string | null;
   adAgeMin: number;
   setAdAgeMin: (value: number) => void;
   adAgeMax: number;
   setAdAgeMax: (value: number) => void;
   adCountries: string[];
   setAdCountries: (value: string[]) => void;
+  adLocationScope: 'local' | 'global';
+  setAdLocationScope: (value: 'local' | 'global') => void;
+  adLocalPlace: { label: string; lat: number; lon: number } | null;
+  setAdLocalPlace: (value: { label: string; lat: number; lon: number } | null) => void;
+  adGenders: Array<'women' | 'men'>;
+  setAdGenders: (value: Array<'women' | 'men'>) => void;
   adBudgetPerDay: 10 | 25 | 50 | null;
   setAdBudgetPerDay: (value: 10 | 25 | 50) => void;
   adDurationDays: 3 | 7 | 10 | null;
@@ -111,12 +120,21 @@ export function SetupMetaAdsStep({
   ideaDescription,
   targetAudience,
   problemSolved,
+  domainChoice,
+  customDomain,
+  purchasedDomain,
   adAgeMin,
   setAdAgeMin,
   adAgeMax,
   setAdAgeMax,
   adCountries,
   setAdCountries,
+  adLocationScope,
+  setAdLocationScope,
+  adLocalPlace,
+  setAdLocalPlace,
+  adGenders,
+  setAdGenders,
   adBudgetPerDay,
   setAdBudgetPerDay,
   adDurationDays,
@@ -147,12 +165,19 @@ export function SetupMetaAdsStep({
   const [imageError, setImageError] = useState<string | null>(null);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [moreCountryQuery, setMoreCountryQuery] = useState('');
+  const [placeQuery, setPlaceQuery] = useState('');
+  const [placeSuggestions, setPlaceSuggestions] = useState<Array<{ label: string; lat: number; lon: number }>>([]);
+  const [isPlacesLoading, setIsPlacesLoading] = useState(false);
+  const [isLocatingPlace, setIsLocatingPlace] = useState(false);
   const [showLaunchReview, setShowLaunchReview] = useState(false);
   const [isLaunchingPayment, setIsLaunchingPayment] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [isLaunchingCampaign, setIsLaunchingCampaign] = useState(false);
+  const [launchError, setLaunchError] = useState<string | null>(null);
 
   const sdkLoadPromiseRef = useRef<Promise<void> | null>(null);
   const shouldFetchInstagramAccountsRef = useRef(false);
+  const hasTriggeredLaunchRef = useRef(false);
 
   const ensureFacebookSdkLoaded = async () => {
     if (!facebookAppId) {
@@ -357,6 +382,42 @@ export function SetupMetaAdsStep({
     return instagramBusinessAccounts.filter((account) => account.username.toLowerCase().includes(normalizedQuery));
   }, [instagramBusinessAccounts, instagramAccountQuery]);
 
+  const selectedFacebookPage = useMemo(
+    () => facebookPages.find((page) => page.link && page.link === facebookPageUrl),
+    [facebookPages, facebookPageUrl]
+  );
+
+  const selectedInstagramAccount = useMemo(() => {
+    const normalizedUrl = instagramPageUrl.trim().replace(/\/+$/, '');
+    if (!normalizedUrl) return undefined;
+    return instagramBusinessAccounts.find(
+      (account) => `https://instagram.com/${account.username}` === normalizedUrl
+    );
+  }, [instagramBusinessAccounts, instagramPageUrl]);
+
+  const ideaSlug =
+    ideaDescription
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .join('')
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .toLowerCase()
+      .slice(0, 18) || 'youridea';
+
+  const landingDomain =
+    domainChoice === 'trusignal'
+      ? `app.trusignal.space/${ideaSlug}`
+      : domainChoice === 'custom'
+        ? (purchasedDomain ?? customDomain).trim()
+        : '';
+
+  const destinationUrl = landingDomain
+    ? landingDomain.startsWith('http')
+      ? landingDomain
+      : `https://${landingDomain}`
+    : '';
+
   const availableCountries = [
     { name: 'United States', flag: '🇺🇸' },
     { name: 'Canada', flag: '🇨🇦' },
@@ -407,15 +468,136 @@ export function SetupMetaAdsStep({
     setAdCountries([...adCountries, country]);
   };
 
+  const toggleGender = (gender: 'women' | 'men') => {
+    if (adGenders.includes(gender)) {
+      const next = adGenders.filter((value) => value !== gender);
+      setAdGenders(next.length > 0 ? next : ['women', 'men']);
+      return;
+    }
+
+    setAdGenders([...adGenders, gender]);
+  };
+
+  const currentCountryName = useMemo(() => {
+    try {
+      const region = navigator.language.split('-')[1];
+      if (!region) return null;
+      return new Intl.DisplayNames(['en'], { type: 'region' }).of(region.toUpperCase()) ?? null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const countriesForSelection = useMemo(() => {
+    if (!currentCountryName) return availableCountries;
+    const matching = availableCountries.find((country) => country.name === currentCountryName);
+    if (!matching) return availableCountries;
+    return [matching, ...availableCountries.filter((country) => country.name !== matching.name)];
+  }, [currentCountryName]);
+
+  const handleSelectPlace = (place: { label: string; lat: number; lon: number }) => {
+    setAdLocalPlace(place);
+    setPlaceQuery(place.label);
+    setPlaceSuggestions([]);
+  };
+
+  const handleLocateMe = async () => {
+    if (!navigator.geolocation) return;
+
+    setIsLocatingPlace(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          const lat = position.coords.latitude;
+          const lon = position.coords.longitude;
+          const url = new URL('https://nominatim.openstreetmap.org/reverse');
+          url.searchParams.set('format', 'json');
+          url.searchParams.set('lat', String(lat));
+          url.searchParams.set('lon', String(lon));
+
+          const response = await fetch(url.toString());
+          const data = await response.json();
+
+          const label = typeof data?.display_name === 'string' && data.display_name.trim() ? data.display_name : 'Current location';
+          handleSelectPlace({ label, lat, lon });
+        } finally {
+          setIsLocatingPlace(false);
+        }
+      },
+      () => {
+        setIsLocatingPlace(false);
+      },
+      { timeout: 10000 }
+    );
+  };
+
+  useEffect(() => {
+    if (adLocationScope !== 'local') return;
+
+    const query = placeQuery.trim();
+    if (query.length < 3) {
+      setPlaceSuggestions([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(async () => {
+      try {
+        setIsPlacesLoading(true);
+        const url = new URL('https://nominatim.openstreetmap.org/search');
+        url.searchParams.set('format', 'json');
+        url.searchParams.set('q', query);
+        url.searchParams.set('addressdetails', '1');
+        url.searchParams.set('limit', '5');
+
+        const response = await fetch(url.toString(), { signal: controller.signal });
+        const results = await response.json();
+
+        const nextSuggestions = Array.isArray(results)
+          ? results
+              .map((item) => {
+                const label = typeof item?.display_name === 'string' ? String(item.display_name) : '';
+                const lat = Number(item?.lat);
+                const lon = Number(item?.lon);
+                if (!label || !Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+                return { label, lat, lon };
+              })
+              .filter(Boolean)
+          : [];
+
+        setPlaceSuggestions(nextSuggestions as Array<{ label: string; lat: number; lon: number }>);
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setPlaceSuggestions([]);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsPlacesLoading(false);
+        }
+      }
+    }, 300);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeout);
+    };
+  }, [placeQuery, adLocationScope]);
+
+  const hasLocationTargeting = adLocationScope === 'global' ? adCountries.length > 0 : Boolean(adLocalPlace);
+
   const canLaunch =
-    adBudgetPerDay !== null && adDurationDays !== null && adCountries.length > 0 && adAgeMin >= 13 && adAgeMax >= adAgeMin;
+    adBudgetPerDay !== null && adDurationDays !== null && hasLocationTargeting && adAgeMin >= 13 && adAgeMax >= adAgeMin;
 
   const totalBudget =
     adBudgetPerDay !== null && adDurationDays !== null ? adBudgetPerDay * adDurationDays : null;
 
   const adsCheckoutMessage =
     adsCheckoutStatus === 'success'
-      ? 'Payment confirmed. Your ad campaign is queued for launch.'
+      ? launchError
+        ? `Payment confirmed, but we couldn't launch the ad campaign: ${launchError}`
+        : isLaunchingCampaign
+          ? 'Payment confirmed. Launching your ad campaign now...'
+          : 'Payment confirmed. Your ad campaign is queued for launch.'
       : adsCheckoutStatus === 'cancel'
         ? 'Checkout was cancelled. Your ad campaign has not been launched.'
         : null;
@@ -454,6 +636,87 @@ export function SetupMetaAdsStep({
       setIsLaunchingPayment(false);
     }
   };
+
+  const launchCampaign = async () => {
+    setIsLaunchingCampaign(true);
+    setLaunchError(null);
+    hasTriggeredLaunchRef.current = true;
+
+    try {
+      if (!selectedFacebookPage?.id) {
+        throw new Error('Select a Facebook page to launch the ad campaign.');
+      }
+
+      if (!destinationUrl) {
+        throw new Error('Missing landing page destination URL.');
+      }
+
+      if (!adImageUrl?.trim()) {
+        throw new Error('Missing ad image URL.');
+      }
+
+      if (!adHeadline?.trim()) {
+        throw new Error('Missing ad headline.');
+      }
+
+      if (!adDescription?.trim()) {
+        throw new Error('Missing ad description.');
+      }
+
+      if (adBudgetPerDay === null || adDurationDays === null) {
+        throw new Error('Missing ad budget or duration.');
+      }
+
+      if (adLocationScope === 'global' && adCountries.length === 0) {
+        throw new Error('Select at least one country for targeting.');
+      }
+
+      if (adLocationScope === 'local' && !adLocalPlace) {
+        throw new Error('Select a local place for targeting.');
+      }
+
+      const { error } = await supabase.functions.invoke('create-meta-campaign', {
+        body: {
+          pageId: selectedFacebookPage.id,
+          instagramActorId: selectedInstagramAccount?.id,
+          destinationUrl,
+          adImageUrl: adImageUrl.trim(),
+          adHeadline: adHeadline.trim(),
+          adPrimaryText: adDescription.trim(),
+          adCta,
+          budgetPerDayUsd: adBudgetPerDay,
+          durationDays: adDurationDays,
+          ageMin: adAgeMin,
+          ageMax: adAgeMax,
+          genders: adGenders,
+          locationScope: adLocationScope,
+          countryNames: adLocationScope === 'global' ? adCountries : undefined,
+          localPlace:
+            adLocationScope === 'local' && adLocalPlace
+              ? {
+                  label: adLocalPlace.label,
+                  lat: adLocalPlace.lat,
+                  lon: adLocalPlace.lon,
+                }
+              : undefined,
+        },
+      });
+
+      if (error) {
+        throw error;
+      }
+    } catch (error) {
+      setLaunchError(error instanceof Error ? error.message : 'Unable to launch the ad campaign.');
+    } finally {
+      setIsLaunchingCampaign(false);
+    }
+  };
+
+  useEffect(() => {
+    if (adsCheckoutStatus !== 'success') return;
+    if (hasTriggeredLaunchRef.current) return;
+    void launchCampaign();
+  }, [adsCheckoutStatus]);
 
   useEffect(() => {
     const stored = localStorage.getItem('trusignal.analyzeIdea');
@@ -1299,14 +1562,29 @@ export function SetupMetaAdsStep({
             >
               <div className="flex items-start justify-between gap-3">
                 <div>{adsCheckoutMessage}</div>
-                <button
-                  type="button"
-                  onClick={onDismissAdsCheckoutNotice}
-                  className="p-1 rounded-md hover:bg-white/10 text-current"
-                  aria-label="Dismiss message"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-2">
+                  {launchError && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isLaunchingCampaign) return;
+                        hasTriggeredLaunchRef.current = false;
+                        void launchCampaign();
+                      }}
+                      className="px-3 py-1 text-xs font-semibold rounded-md border border-emerald-400/40 text-emerald-100 hover:bg-emerald-500/10 transition-colors"
+                    >
+                      Retry Launch
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={onDismissAdsCheckoutNotice}
+                    className="p-1 rounded-md hover:bg-white/10 text-current"
+                    aria-label="Dismiss message"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -1321,81 +1599,189 @@ export function SetupMetaAdsStep({
                 <h3 className="text-xl font-semibold text-white">Audience</h3>
               </div>
 
-              <div className="grid md:grid-cols-2 gap-4">
+              <div className="space-y-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Age range</label>
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="number"
-                      min={13}
-                      max={120}
-                      value={adAgeMin}
-                      onChange={(e) => setAdAgeMin(Number(e.target.value))}
-                      className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
-                    />
-                    <span className="text-gray-500 font-semibold">to</span>
-                    <input
-                      type="number"
-                      min={13}
-                      max={120}
-                      value={adAgeMax}
-                      onChange={(e) => setAdAgeMax(Number(e.target.value))}
-                      className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
-                    />
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Location targeting</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setAdLocationScope('local')}
+                      className={`px-4 py-3 rounded-lg border-2 font-semibold transition-all ${
+                        adLocationScope === 'local'
+                          ? 'border-indigo-500 bg-indigo-500/10 text-white'
+                          : 'border-gray-700 text-gray-400 hover:border-gray-600'
+                      }`}
+                    >
+                      Local
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAdLocationScope('global')}
+                      className={`px-4 py-3 rounded-lg border-2 font-semibold transition-all ${
+                        adLocationScope === 'global'
+                          ? 'border-indigo-500 bg-indigo-500/10 text-white'
+                          : 'border-gray-700 text-gray-400 hover:border-gray-600'
+                      }`}
+                    >
+                      Global
+                    </button>
                   </div>
-                  <p className="text-gray-500 text-sm mt-2">Meta requires ages 13+.</p>
+
+                  {adLocationScope === 'local' ? (
+                    <div className="mt-4">
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Place</label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="Search for a city, area, or address"
+                          value={placeQuery}
+                          onChange={(e) => setPlaceQuery(e.target.value)}
+                          className="w-full px-4 py-3 pr-14 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleLocateMe}
+                          disabled={isLocatingPlace}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-gray-900 border border-gray-700 text-white rounded-lg hover:border-indigo-500 transition-colors disabled:opacity-50"
+                          aria-label="Locate me"
+                        >
+                          <LocateFixed className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      {placeSuggestions.length > 0 && (
+                        <div className="mt-2 bg-gray-800 border border-gray-700 rounded-lg overflow-hidden max-h-56 overflow-y-auto">
+                          {placeSuggestions.map((place) => (
+                            <button
+                              key={`${place.lat}-${place.lon}`}
+                              type="button"
+                              onClick={() => handleSelectPlace(place)}
+                              className="w-full px-4 py-3 text-left text-sm text-gray-200 hover:bg-gray-700 transition-colors"
+                            >
+                              {place.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      <p className="text-gray-500 text-sm mt-2">
+                        {isLocatingPlace
+                          ? 'Locating your current position...'
+                          : isPlacesLoading
+                            ? 'Searching...'
+                            : adLocalPlace
+                              ? `Selected: ${adLocalPlace.label}`
+                              : 'Use the search box or click the locate icon.'}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="mt-4">
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Countries</label>
+                      <div className="grid grid-cols-2 gap-3">
+                        {countriesForSelection.map((country) => {
+                          const selected = adCountries.includes(country.name);
+
+                          return (
+                            <button
+                              key={country.name}
+                              onClick={() => toggleCountry(country.name)}
+                              className={`px-4 py-3 rounded-lg border-2 font-semibold transition-all flex items-center justify-between gap-3 ${
+                                selected
+                                  ? 'border-indigo-500 bg-indigo-500/10 text-white'
+                                  : 'border-gray-700 text-gray-400 hover:border-gray-600'
+                              }`}
+                            >
+                              <span className="text-left text-sm">
+                                <span className="mr-2">{country.flag}</span>
+                                {country.name}
+                              </span>
+                              {selected && <Check className="w-4 h-4 text-indigo-400 flex-shrink-0" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="text-gray-500 text-sm mt-2">Select one or more target countries.</p>
+                      <div className="mt-4">
+                        <label className="block text-sm font-medium text-gray-300 mb-2">More Countries</label>
+                        <div className="flex flex-col gap-3 sm:flex-row">
+                          <input
+                            type="text"
+                            list="more-countries"
+                            placeholder="Start typing to add a country"
+                            value={moreCountryQuery}
+                            onChange={(e) => setMoreCountryQuery(e.target.value)}
+                            className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleAddCountry}
+                            className="px-5 py-3 bg-gray-900 border border-gray-700 text-white rounded-lg hover:border-indigo-500 transition-colors font-semibold"
+                          >
+                            Add
+                          </button>
+                        </div>
+                        <datalist id="more-countries">
+                          {additionalCountries.map((country) => (
+                            <option key={country} value={country} />
+                          ))}
+                        </datalist>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Countries</label>
-                  <div className="grid grid-cols-2 gap-3">
-                    {availableCountries.map((country) => {
-                      const selected = adCountries.includes(country.name);
-
-                      return (
-                        <button
-                          key={country.name}
-                          onClick={() => toggleCountry(country.name)}
-                          className={`px-4 py-3 rounded-lg border-2 font-semibold transition-all flex items-center justify-between gap-3 ${
-                            selected
-                              ? 'border-indigo-500 bg-indigo-500/10 text-white'
-                              : 'border-gray-700 text-gray-400 hover:border-gray-600'
-                          }`}
-                        >
-                          <span className="text-left text-sm">
-                            <span className="mr-2">{country.flag}</span>
-                            {country.name}
-                          </span>
-                          {selected && <Check className="w-4 h-4 text-indigo-400 flex-shrink-0" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <p className="text-gray-500 text-sm mt-2">Select one or more target countries.</p>
-                  <div className="mt-4">
-                    <label className="block text-sm font-medium text-gray-300 mb-2">More Countries</label>
-                    <div className="flex flex-col gap-3 sm:flex-row">
-                      <input
-                        type="text"
-                        list="more-countries"
-                        placeholder="Start typing to add a country"
-                        value={moreCountryQuery}
-                        onChange={(e) => setMoreCountryQuery(e.target.value)}
-                        className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
-                      />
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Gender</label>
+                    <div className="grid grid-cols-2 gap-3">
                       <button
                         type="button"
-                        onClick={handleAddCountry}
-                        className="px-5 py-3 bg-gray-900 border border-gray-700 text-white rounded-lg hover:border-indigo-500 transition-colors font-semibold"
+                        onClick={() => toggleGender('women')}
+                        className={`px-4 py-3 rounded-lg border-2 font-semibold transition-all ${
+                          adGenders.includes('women')
+                            ? 'border-indigo-500 bg-indigo-500/10 text-white'
+                            : 'border-gray-700 text-gray-400 hover:border-gray-600'
+                        }`}
                       >
-                        Add
+                        Women
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleGender('men')}
+                        className={`px-4 py-3 rounded-lg border-2 font-semibold transition-all ${
+                          adGenders.includes('men')
+                            ? 'border-indigo-500 bg-indigo-500/10 text-white'
+                            : 'border-gray-700 text-gray-400 hover:border-gray-600'
+                        }`}
+                      >
+                        Men
                       </button>
                     </div>
-                    <datalist id="more-countries">
-                      {additionalCountries.map((country) => (
-                        <option key={country} value={country} />
-                      ))}
-                    </datalist>
+                    <p className="text-gray-500 text-sm mt-2">Default is both.</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Age range</label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="number"
+                        min={13}
+                        max={120}
+                        value={adAgeMin}
+                        onChange={(e) => setAdAgeMin(Number(e.target.value))}
+                        className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
+                      />
+                      <span className="text-gray-500 font-semibold">to</span>
+                      <input
+                        type="number"
+                        min={13}
+                        max={120}
+                        value={adAgeMax}
+                        onChange={(e) => setAdAgeMax(Number(e.target.value))}
+                        className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
+                      />
+                    </div>
+                    <p className="text-gray-500 text-sm mt-2">Meta requires ages 13+.</p>
                   </div>
                 </div>
               </div>
@@ -1522,11 +1908,19 @@ export function SetupMetaAdsStep({
               <div className="bg-gray-800 rounded-xl border border-gray-700 p-5 space-y-4">
                 <div>
                   <div className="text-sm text-gray-400 mb-2">Targeting</div>
-                  <div className="text-white text-sm">
-                    Ages {adAgeMin}–{adAgeMax}
+                  <div className="text-white text-sm">Ages {adAgeMin}–{adAgeMax}</div>
+                  <div className="text-gray-400 text-sm mt-1">
+                    Gender:{' '}
+                    {adGenders.length === 2
+                      ? 'Women, Men'
+                      : adGenders.includes('women')
+                        ? 'Women'
+                        : 'Men'}
                   </div>
                   <div className="text-gray-400 text-sm mt-1">
-                    Countries: {adCountries.length > 0 ? adCountries.join(', ') : 'None'}
+                    {adLocationScope === 'local'
+                      ? `Place: ${adLocalPlace ? adLocalPlace.label : 'None'}`
+                      : `Countries: ${adCountries.length > 0 ? adCountries.join(', ') : 'None'}`}
                   </div>
                 </div>
                 <div>
