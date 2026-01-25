@@ -363,6 +363,14 @@ export default function App() {
 
     if (idea.research_data) {
       localStorage.setItem('trusignal.analyzeIdea', JSON.stringify(idea.research_data));
+      localStorage.setItem(
+        'trusignal.analyzeIdeaInputs',
+        JSON.stringify({
+          ideaDescription: nextIdeaText,
+          targetAudience: nextAudience,
+          problemSolved: nextProblem,
+        })
+      );
     }
 
     const suggestedSubdomain = idea.metadata?.suggested_subdomain;

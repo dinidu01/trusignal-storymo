@@ -187,6 +187,34 @@ export function CreateLandingPageStep({
   }, [suggestedSubdomain]);
 
   useEffect(() => {
+    const storedAnalysis = localStorage.getItem('trusignal.analyzeIdea');
+    const storedInputs = localStorage.getItem('trusignal.analyzeIdeaInputs');
+    if (!storedAnalysis || !storedInputs) {
+      if (ideaResearchComplete) {
+        setIdeaResearchComplete(false);
+      }
+      return;
+    }
+
+    try {
+      const parsedInputs = JSON.parse(storedInputs) as {
+        ideaDescription?: string;
+        targetAudience?: string;
+        problemSolved?: string;
+      };
+
+      const matches =
+        parsedInputs.ideaDescription === ideaDescription &&
+        parsedInputs.targetAudience === targetAudience &&
+        parsedInputs.problemSolved === problemSolved;
+
+      setIdeaResearchComplete(matches);
+    } catch (_error) {
+      // Ignore stored data errors.
+    }
+  }, [ideaDescription, ideaResearchComplete, problemSolved, targetAudience]);
+
+  useEffect(() => {
     const payload = {
       ideaDescription,
       targetAudience,
@@ -268,6 +296,7 @@ export function CreateLandingPageStep({
           audience: targetAudience,
           problem: problemSolved,
           segment_count: 3,
+          idea_id: ideaId ?? undefined,
         },
       });
 
@@ -286,6 +315,14 @@ export function CreateLandingPageStep({
         setIdeaId(String(data.idea_id));
       }
 
+      localStorage.setItem(
+        'trusignal.analyzeIdeaInputs',
+        JSON.stringify({
+          ideaDescription,
+          targetAudience,
+          problemSolved,
+        })
+      );
       localStorage.setItem('trusignal.analyzeIdea', JSON.stringify(data));
       setIdeaResearchComplete(true);
     } catch (_error) {

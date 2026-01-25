@@ -73,7 +73,8 @@ const clampSegmentCount = (value: unknown) => {
 //   "idea": "string",
 //   "audience": "string",
 //   "problem": "string",
-//   "segment_count": 3
+//   "segment_count": 3,
+//   "idea_id": "uuid"
 // }
 // Response format (JSON):
 // {
@@ -108,6 +109,7 @@ Deno.serve(async (req) => {
     audience?: string;
     problem?: string;
     segment_count?: number;
+    idea_id?: string;
   };
 
   try {
@@ -270,38 +272,75 @@ Deno.serve(async (req) => {
       });
     }
 
-    const insertResponse = await fetch(`${supabaseUrl}/rest/v1/ideas`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        apikey: supabaseAnonKey,
-        "Content-Type": "application/json",
-        Prefer: "return=representation",
-      },
-      body: JSON.stringify({
-        user_id: userId,
-        idea_text: idea,
-        target_audience: audience,
-        problem_solved: problem,
-        research_data: json,
-        metadata: {
-          segment_count: segmentCount,
-          suggested_subdomain: json?.suggested_subdomain ?? null,
-        },
-      }),
-    });
+    const ideaId = payload.idea_id?.trim();
+    let existingMetadata: Record<string, unknown> | null = null;
 
-    if (!insertResponse.ok) {
+    if (ideaId) {
+      const existingResponse = await fetch(`${supabaseUrl}/rest/v1/ideas?id=eq.${ideaId}&select=metadata`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          apikey: supabaseAnonKey,
+        },
+      });
+
+      if (existingResponse.ok) {
+        const existingRows = await existingResponse.json();
+        existingMetadata =
+          Array.isArray(existingRows) && existingRows[0]?.metadata
+            ? existingRows[0].metadata
+            : null;
+      }
+    }
+
+    const mergedMetadata = {
+      ...(existingMetadata ?? {}),
+      segment_count: segmentCount,
+      suggested_subdomain: json?.suggested_subdomain ?? null,
+    };
+
+    const writeResponse = await fetch(
+      `${supabaseUrl}/rest/v1/ideas${ideaId ? `?id=eq.${ideaId}` : ""}`,
+      {
+        method: ideaId ? "PATCH" : "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          apikey: supabaseAnonKey,
+          "Content-Type": "application/json",
+          Prefer: "return=representation",
+        },
+        body: JSON.stringify(
+          ideaId
+            ? {
+                idea_text: idea,
+                target_audience: audience,
+                problem_solved: problem,
+                research_data: json,
+                metadata: mergedMetadata,
+                updated_at: new Date().toISOString(),
+              }
+            : {
+                user_id: userId,
+                idea_text: idea,
+                target_audience: audience,
+                problem_solved: problem,
+                research_data: json,
+                metadata: mergedMetadata,
+              }
+        ),
+      }
+    );
+
+    if (!writeResponse.ok) {
       return new Response(JSON.stringify({ error: "Failed to store idea analysis" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const inserted = await insertResponse.json();
-    const ideaId = Array.isArray(inserted) ? inserted[0]?.id : null;
+    const stored = await writeResponse.json();
+    const storedIdeaId = Array.isArray(stored) ? stored[0]?.id : null;
 
-    return new Response(JSON.stringify({ ...json, idea_id: ideaId }), {
+    return new Response(JSON.stringify({ ...json, idea_id: storedIdeaId ?? ideaId ?? null }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (_error) {
