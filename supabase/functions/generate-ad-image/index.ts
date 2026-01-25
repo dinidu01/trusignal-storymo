@@ -87,7 +87,6 @@ Deno.serve(async (req) => {
   const idea = payload.idea?.trim();
   const audience = payload.audience?.trim();
   const problem = payload.problem?.trim();
-
   if (!idea || !audience || !problem) {
     return new Response(
       JSON.stringify({

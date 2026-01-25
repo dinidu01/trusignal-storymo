@@ -15,6 +15,10 @@ type MetaPagePayload = {
     username?: string;
     url?: string;
   };
+  ad_creative?: {
+    image_data_url?: string;
+    filename?: string;
+  };
 };
 
 Deno.serve(async (req) => {
@@ -55,9 +59,9 @@ Deno.serve(async (req) => {
     });
   }
 
-  const hasMetaUpdates = Boolean(payload.facebook_page || payload.instagram_page);
+  const hasMetaUpdates = Boolean(payload.facebook_page || payload.instagram_page || payload.ad_creative);
   if (!hasMetaUpdates) {
-    return new Response(JSON.stringify({ error: "Missing facebook_page or instagram_page" }), {
+    return new Response(JSON.stringify({ error: "Missing facebook_page, instagram_page, or ad_creative" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -73,6 +77,75 @@ Deno.serve(async (req) => {
   }
 
   const token = authHeader.replace("Bearer ", "");
+  let creativeStoragePath: string | null = null;
+  let creativeSignedUrl: string | null = null;
+
+  if (payload.ad_creative?.image_data_url) {
+    const dataUrl = payload.ad_creative.image_data_url.trim();
+    const match = dataUrl.match(/^data:(.+);base64,(.*)$/);
+    if (!match) {
+      return new Response(JSON.stringify({ error: "Invalid ad creative data URL" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const mimeType = match[1] || "image/png";
+    const base64 = match[2];
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+
+    const filename = payload.ad_creative.filename?.trim() || `${crypto.randomUUID()}.png`;
+    creativeStoragePath = `${ideaId}/ad-creatives/${filename}`;
+
+    const uploadResponse = await fetch(
+      `${supabaseUrl}/storage/v1/object/idea-storage/${creativeStoragePath}`,
+      {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          apikey: supabaseAnonKey,
+          "Content-Type": mimeType,
+        },
+        body: bytes,
+      }
+    );
+
+    if (!uploadResponse.ok) {
+      return new Response(JSON.stringify({ error: "Failed to store ad creative" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const signResponse = await fetch(
+      `${supabaseUrl}/storage/v1/object/sign/idea-storage/${creativeStoragePath}`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          apikey: supabaseAnonKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ expiresIn: 3600 }),
+      }
+    );
+
+    if (!signResponse.ok) {
+      return new Response(JSON.stringify({ error: "Failed to sign ad creative URL" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const signData = await signResponse.json();
+    creativeSignedUrl = signData?.signedUrl
+      ? `${supabaseUrl}${signData.signedUrl}`
+      : null;
+  }
 
   const existingResponse = await fetch(`${supabaseUrl}/rest/v1/ideas?id=eq.${ideaId}&select=metadata`, {
     headers: {
@@ -95,6 +168,7 @@ Deno.serve(async (req) => {
     ...existingMetadata,
     ...(payload.facebook_page ? { meta_facebook_page: payload.facebook_page } : {}),
     ...(payload.instagram_page ? { meta_instagram_page: payload.instagram_page } : {}),
+    ...(creativeStoragePath ? { meta_ad_creative_path: creativeStoragePath } : {}),
   };
 
   const updateResponse = await fetch(`${supabaseUrl}/rest/v1/ideas?id=eq.${ideaId}`, {
@@ -116,7 +190,15 @@ Deno.serve(async (req) => {
   }
 
   const updatedRows = await updateResponse.json();
-  return new Response(JSON.stringify({ metadata: updatedRows[0]?.metadata ?? nextMetadata }), {
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
+  return new Response(
+    JSON.stringify({
+      metadata: updatedRows[0]?.metadata ?? nextMetadata,
+      ad_creative: creativeStoragePath
+        ? { storage_path: creativeStoragePath, signed_url: creativeSignedUrl }
+        : null,
+    }),
+    {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    }
+  );
 });

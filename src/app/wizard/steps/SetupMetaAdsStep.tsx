@@ -462,6 +462,7 @@ export function SetupMetaAdsStep({
 
       const metaFacebook = data.metadata?.meta_facebook_page;
       const metaInstagram = data.metadata?.meta_instagram_page;
+      const metaCreativePath = data.metadata?.meta_ad_creative_path;
 
       if (metaFacebook?.link && !facebookPageUrl) {
         setFacebookPageUrl(String(metaFacebook.link));
@@ -470,10 +471,20 @@ export function SetupMetaAdsStep({
       if (metaInstagram?.url && !instagramPageUrl) {
         setInstagramPageUrl(String(metaInstagram.url));
       }
+
+      if (metaCreativePath && !adImageUrl) {
+        const { data: signedData, error: signedError } = await supabase.storage
+          .from('idea-storage')
+          .createSignedUrl(String(metaCreativePath), 3600);
+        if (!signedError && signedData?.signedUrl) {
+          setAdImageMethod('ai');
+          setAdImageUrl(signedData.signedUrl);
+        }
+      }
     };
 
     void loadIdeaMeta();
-  }, [facebookPageUrl, ideaId, instagramPageUrl, setFacebookPageUrl, setInstagramPageUrl]);
+  }, [adImageUrl, facebookPageUrl, ideaId, instagramPageUrl, setFacebookPageUrl, setInstagramPageUrl, setAdImageMethod, setAdImageUrl]);
 
   useEffect(() => {
     if (suggestedSubdomain) return;
@@ -891,9 +902,41 @@ export function SetupMetaAdsStep({
     localStorage.setItem('trusignal.adImage', adImageUrl);
   }, [adImageUrl]);
 
+  useEffect(() => {
+    if (!ideaId || adImageUrl) return;
+
+    const hydrateCreative = async () => {
+      const { data, error } = await supabase.storage
+        .from('idea-storage')
+        .list(`${ideaId}/ad-creatives`, { limit: 1, sortBy: { column: 'created_at', order: 'desc' } });
+
+      if (error || !data || data.length === 0) {
+        return;
+      }
+
+      const latest = data[0];
+      const path = `${ideaId}/ad-creatives/${latest.name}`;
+      const { data: signedData, error: signedError } = await supabase.storage
+        .from('idea-storage')
+        .createSignedUrl(path, 3600);
+
+      if (!signedError && signedData?.signedUrl) {
+        setAdImageMethod('ai');
+        setAdImageUrl(signedData.signedUrl);
+      }
+    };
+
+    void hydrateCreative();
+  }, [adImageUrl, ideaId, setAdImageMethod, setAdImageUrl]);
+
   const handleGenerateImage = async () => {
     if (!ideaDescription || !targetAudience || !problemSolved) {
       setImageError('Provide idea, audience, and problem details first.');
+      return;
+    }
+
+    if (!ideaId) {
+      setImageError('Missing idea id. Please select an idea first.');
       return;
     }
 
@@ -915,7 +958,23 @@ export function SetupMetaAdsStep({
       }
 
       if (data?.image_data_url) {
-        setAdImageUrl(data.image_data_url);
+        const { data: metaData, error: metaError } = await supabase.functions.invoke('save-meta-pages', {
+          body: {
+            idea_id: ideaId,
+            ad_creative: { image_data_url: data.image_data_url },
+          },
+        });
+
+        if (metaError) {
+          throw metaError;
+        }
+
+        const signedUrl = metaData?.ad_creative?.signed_url;
+        if (signedUrl) {
+          setAdImageUrl(signedUrl);
+        } else {
+          setAdImageUrl(data.image_data_url);
+        }
       } else {
         throw new Error('Missing image data.');
       }
