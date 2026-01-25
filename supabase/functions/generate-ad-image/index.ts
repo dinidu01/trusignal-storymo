@@ -1,3 +1,6 @@
+import { createLogger } from "../_shared/logger.ts";
+
+const log = createLogger("generate-ad-image");
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -68,6 +71,7 @@ Deno.serve(async (req) => {
   }
 
   if (req.method !== "POST") {
+    log.error("Method not allowed", { status: 405 });
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -78,6 +82,7 @@ Deno.serve(async (req) => {
   try {
     payload = await req.json();
   } catch (_error) {
+    log.error("Invalid JSON payload", { status: 400 });
     return new Response(JSON.stringify({ error: "Invalid JSON payload" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -88,6 +93,7 @@ Deno.serve(async (req) => {
   const audience = payload.audience?.trim();
   const problem = payload.problem?.trim();
   if (!idea || !audience || !problem) {
+    log.error("Missing required fields", { status: 400 });
     return new Response(
       JSON.stringify({
         error: "Missing required fields: idea, audience, problem",
@@ -101,6 +107,7 @@ Deno.serve(async (req) => {
 
   const apiKey = Deno.env.get("OPENAI_API_KEY");
   if (!apiKey) {
+    log.error("Missing OPENAI_API_KEY", { status: 500 });
     return new Response(JSON.stringify({ error: "Missing OPENAI_API_KEY" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -125,6 +132,10 @@ Deno.serve(async (req) => {
 
   if (!response.ok) {
     const errorBody = await response.text();
+    log.error("Image request failed", {
+      status: response.status,
+      error: errorBody || "Image request failed",
+    });
     return new Response(JSON.stringify({ error: errorBody || "Image request failed" }), {
       status: response.status,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -132,6 +143,7 @@ Deno.serve(async (req) => {
   }
 
   if (!response.body) {
+    log.error("Missing image stream", { status: 502 });
     return new Response(JSON.stringify({ error: "Missing image stream" }), {
       status: 502,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -140,6 +152,7 @@ Deno.serve(async (req) => {
 
   const imageBase64 = await parseImageStream(response.body);
   if (!imageBase64) {
+    log.error("No image data received", { status: 502 });
     return new Response(JSON.stringify({ error: "No image data received" }), {
       status: 502,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

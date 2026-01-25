@@ -1,3 +1,6 @@
+import { createLogger } from "../_shared/logger.ts";
+
+const log = createLogger("save-meta-pages");
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -27,6 +30,7 @@ Deno.serve(async (req) => {
   }
 
   if (req.method !== "POST") {
+    log.error("Method not allowed", { status: 405 });
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -35,6 +39,7 @@ Deno.serve(async (req) => {
 
   const authHeader = req.headers.get("authorization");
   if (!authHeader) {
+    log.error("Missing Authorization header", { status: 401 });
     return new Response(JSON.stringify({ error: "Missing Authorization header" }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -45,6 +50,7 @@ Deno.serve(async (req) => {
   try {
     payload = (await req.json()) as MetaPagePayload;
   } catch (_error) {
+    log.error("Invalid JSON payload", { status: 400 });
     return new Response(JSON.stringify({ error: "Invalid JSON payload" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -53,6 +59,7 @@ Deno.serve(async (req) => {
 
   const ideaId = payload.idea_id?.trim();
   if (!ideaId) {
+    log.error("Missing idea_id", { status: 400 });
     return new Response(JSON.stringify({ error: "Missing idea_id" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -61,6 +68,7 @@ Deno.serve(async (req) => {
 
   const hasMetaUpdates = Boolean(payload.facebook_page || payload.instagram_page || payload.ad_creative);
   if (!hasMetaUpdates) {
+    log.error("Missing meta updates", { status: 400 });
     return new Response(JSON.stringify({ error: "Missing facebook_page, instagram_page, or ad_creative" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -70,6 +78,7 @@ Deno.serve(async (req) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
   if (!supabaseUrl || !supabaseAnonKey) {
+    log.error("Missing SUPABASE_URL or SUPABASE_ANON_KEY", { status: 500 });
     return new Response(JSON.stringify({ error: "Missing SUPABASE_URL or SUPABASE_ANON_KEY" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -84,6 +93,7 @@ Deno.serve(async (req) => {
     const dataUrl = payload.ad_creative.image_data_url.trim();
     const match = dataUrl.match(/^data:(.+);base64,(.*)$/);
     if (!match) {
+      log.error("Invalid ad creative data URL", { status: 400 });
       return new Response(JSON.stringify({ error: "Invalid ad creative data URL" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -115,6 +125,7 @@ Deno.serve(async (req) => {
     );
 
     if (!uploadResponse.ok) {
+      log.error("Failed to store ad creative", { status: 500 });
       return new Response(JSON.stringify({ error: "Failed to store ad creative" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -135,6 +146,7 @@ Deno.serve(async (req) => {
     );
 
     if (!signResponse.ok) {
+      log.error("Failed to sign ad creative URL", { status: 500 });
       return new Response(JSON.stringify({ error: "Failed to sign ad creative URL" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -155,6 +167,7 @@ Deno.serve(async (req) => {
   });
 
   if (!existingResponse.ok) {
+    log.error("Unable to load idea metadata", { status: 404 });
     return new Response(JSON.stringify({ error: "Unable to load idea metadata" }), {
       status: 404,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -183,6 +196,7 @@ Deno.serve(async (req) => {
   });
 
   if (!updateResponse.ok) {
+    log.error("Failed to save meta pages", { status: 500 });
     return new Response(JSON.stringify({ error: "Failed to save meta pages" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

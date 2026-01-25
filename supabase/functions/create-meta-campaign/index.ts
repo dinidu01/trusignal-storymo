@@ -1,3 +1,6 @@
+import { createLogger } from "../_shared/logger.ts";
+
+const log = createLogger("create-meta-campaign");
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -311,6 +314,7 @@ Deno.serve(async (req) => {
   }
 
   if (req.method !== "POST") {
+    log.error("Method not allowed", { status: 405 });
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -319,6 +323,7 @@ Deno.serve(async (req) => {
 
   const authHeader = req.headers.get("authorization");
   if (!authHeader) {
+    log.error("Missing Authorization header", { status: 401 });
     return new Response(JSON.stringify({ error: "Missing Authorization header" }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -329,6 +334,7 @@ Deno.serve(async (req) => {
   try {
     payload = (await req.json()) as LaunchPayload;
   } catch (_error) {
+    log.error("Invalid JSON payload", { status: 400 });
     return new Response(JSON.stringify({ error: "Invalid JSON payload" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -337,6 +343,7 @@ Deno.serve(async (req) => {
 
   const systemUserToken = Deno.env.get("META_SYSTEM_USER_TOKEN")?.trim();
   if (!systemUserToken) {
+    log.error("Missing META_SYSTEM_USER_TOKEN", { status: 500 });
     return new Response(JSON.stringify({ error: "Missing META_SYSTEM_USER_TOKEN" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -345,6 +352,7 @@ Deno.serve(async (req) => {
 
   const adAccountId = normalizeAdAccountId(Deno.env.get("META_AD_ACCOUNT_ID") ?? "");
   if (!adAccountId) {
+    log.error("Missing META_AD_ACCOUNT_ID", { status: 500 });
     return new Response(JSON.stringify({ error: "Missing META_AD_ACCOUNT_ID" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -352,6 +360,7 @@ Deno.serve(async (req) => {
   }
 
   if (!payload.pageId?.trim()) {
+    log.error("Missing pageId", { status: 400 });
     return new Response(JSON.stringify({ error: "Missing pageId" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -359,6 +368,7 @@ Deno.serve(async (req) => {
   }
 
   if (!payload.ideaId?.trim()) {
+    log.error("Missing ideaId", { status: 400 });
     return new Response(JSON.stringify({ error: "Missing ideaId" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -366,6 +376,7 @@ Deno.serve(async (req) => {
   }
 
   if (!payload.destinationUrl?.trim()) {
+    log.error("Missing destinationUrl", { status: 400 });
     return new Response(JSON.stringify({ error: "Missing destinationUrl" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -373,6 +384,7 @@ Deno.serve(async (req) => {
   }
 
   if (!payload.adImageUrl?.trim()) {
+    log.error("Missing adImageUrl", { status: 400 });
     return new Response(JSON.stringify({ error: "Missing adImageUrl" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -385,6 +397,7 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
     if (!supabaseUrl || !supabaseAnonKey) {
+      log.error("Missing SUPABASE_URL or SUPABASE_ANON_KEY", { status: 500 });
       return new Response(JSON.stringify({ error: "Missing SUPABASE_URL or SUPABASE_ANON_KEY" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -400,6 +413,7 @@ Deno.serve(async (req) => {
     });
 
     if (!userResponse.ok) {
+      log.error("Unable to resolve user", { status: 401 });
       return new Response(JSON.stringify({ error: "Unable to resolve user" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -409,6 +423,7 @@ Deno.serve(async (req) => {
     const userData = await userResponse.json();
     const userId = userData?.id ? String(userData.id) : null;
     if (!userId) {
+      log.error("Missing user id", { status: 401 });
       return new Response(JSON.stringify({ error: "Missing user id" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -432,6 +447,7 @@ Deno.serve(async (req) => {
     });
 
     if (!draftResponse.ok) {
+      log.error("Failed to store ad campaign draft", { status: 500 });
       return new Response(JSON.stringify({ error: "Failed to store ad campaign draft" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -536,6 +552,10 @@ Deno.serve(async (req) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
+    log.error("Campaign launch failed", {
+      status: 500,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

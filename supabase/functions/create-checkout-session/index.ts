@@ -1,3 +1,6 @@
+import { createLogger } from "../_shared/logger.ts";
+
+const log = createLogger("create-checkout-session");
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -9,6 +12,7 @@ Deno.serve(async (req) => {
   }
 
   if (req.method !== "POST") {
+    log.error("Method not allowed", { status: 405 });
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -31,6 +35,7 @@ Deno.serve(async (req) => {
   try {
     payload = await req.json();
   } catch (_error) {
+    log.error("Invalid JSON payload", { status: 400 });
     return new Response(JSON.stringify({ error: "Invalid JSON payload" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -85,6 +90,7 @@ Deno.serve(async (req) => {
     (strategies.ads.shouldUse() ? strategies.ads : null);
 
   if (!selectedStrategy?.shouldUse()) {
+    log.error("Missing pricing details", { status: 400 });
     return new Response(JSON.stringify({ error: "Missing pricing details" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -94,6 +100,7 @@ Deno.serve(async (req) => {
   const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
   const siteUrl = Deno.env.get("SITE_URL");
   if (!stripeKey || !siteUrl) {
+    log.error("Missing STRIPE_SECRET_KEY or SITE_URL", { status: 500 });
     return new Response(JSON.stringify({ error: "Missing STRIPE_SECRET_KEY or SITE_URL" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -182,6 +189,10 @@ Deno.serve(async (req) => {
 
   const sessionData = await sessionResponse.json();
   if (!sessionResponse.ok) {
+    log.error("Stripe session failed", {
+      status: sessionResponse.status,
+      error: sessionData?.error?.message ?? "Stripe session failed",
+    });
     return new Response(
       JSON.stringify({ error: sessionData?.error?.message ?? "Stripe session failed" }),
       {

@@ -1,3 +1,6 @@
+import { createLogger } from "../_shared/logger.ts";
+
+const log = createLogger("analyze-idea");
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -98,6 +101,7 @@ Deno.serve(async (req) => {
   }
 
   if (req.method !== "POST") {
+    log.error("Method not allowed", { status: 405 });
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -115,6 +119,7 @@ Deno.serve(async (req) => {
   try {
     payload = await req.json();
   } catch (_error) {
+    log.error("Invalid JSON payload", { status: 400 });
     return new Response(JSON.stringify({ error: "Invalid JSON payload" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -127,6 +132,7 @@ Deno.serve(async (req) => {
   const segmentCount = clampSegmentCount(payload.segment_count);
 
   if (!idea || !audience || !problem) {
+    log.error("Missing required fields", { status: 400 });
     return new Response(
       JSON.stringify({
         error: "Missing required fields: idea, audience, problem",
@@ -140,6 +146,7 @@ Deno.serve(async (req) => {
 
   const apiKey = Deno.env.get("OPENAI_API_KEY");
   if (!apiKey) {
+    log.error("Missing OPENAI_API_KEY", { status: 500 });
     return new Response(JSON.stringify({ error: "Missing OPENAI_API_KEY" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -192,6 +199,10 @@ Deno.serve(async (req) => {
   const data = await response.json();
 
   if (!response.ok) {
+    log.error("LLM request failed", {
+      status: response.status,
+      error: data?.error?.message ?? "LLM request failed",
+    });
     return new Response(
       JSON.stringify({
         error: data?.error?.message ?? "LLM request failed",
@@ -219,6 +230,7 @@ Deno.serve(async (req) => {
   }
 
   if (!outputText) {
+    log.error("Missing LLM output text", { status: 502 });
     return new Response(
       JSON.stringify({ error: "Missing LLM output text" }),
       {
@@ -233,6 +245,7 @@ Deno.serve(async (req) => {
 
     const authHeader = req.headers.get("authorization");
     if (!authHeader) {
+      log.error("Missing Authorization header", { status: 401 });
       return new Response(JSON.stringify({ error: "Missing Authorization header" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -242,6 +255,7 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
     if (!supabaseUrl || !supabaseAnonKey) {
+      log.error("Missing SUPABASE_URL or SUPABASE_ANON_KEY", { status: 500 });
       return new Response(JSON.stringify({ error: "Missing SUPABASE_URL or SUPABASE_ANON_KEY" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -257,6 +271,7 @@ Deno.serve(async (req) => {
     });
 
     if (!userResponse.ok) {
+      log.error("Unable to resolve user", { status: 401 });
       return new Response(JSON.stringify({ error: "Unable to resolve user" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -266,6 +281,7 @@ Deno.serve(async (req) => {
     const userData = await userResponse.json();
     const userId = userData?.id ? String(userData.id) : null;
     if (!userId) {
+      log.error("Missing user id", { status: 401 });
       return new Response(JSON.stringify({ error: "Missing user id" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -331,6 +347,7 @@ Deno.serve(async (req) => {
     );
 
     if (!writeResponse.ok) {
+      log.error("Failed to store idea analysis", { status: 500 });
       return new Response(JSON.stringify({ error: "Failed to store idea analysis" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -344,6 +361,7 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (_error) {
+    log.error("LLM output was not valid JSON", { status: 502 });
     return new Response(
       JSON.stringify({ error: "LLM output was not valid JSON" }),
       {

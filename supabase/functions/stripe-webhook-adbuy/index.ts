@@ -1,3 +1,6 @@
+import { createLogger } from "../_shared/logger.ts";
+
+const log = createLogger("stripe-webhook-adbuy");
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, stripe-signature",
@@ -49,6 +52,7 @@ Deno.serve(async (req) => {
   }
 
   if (req.method !== "POST") {
+    log.error("Method not allowed", { status: 405 });
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -58,6 +62,7 @@ Deno.serve(async (req) => {
   const signature = req.headers.get("stripe-signature");
   const webhookSecret = Deno.env.get("STRIPE_WEBHOOK_SECRET");
   if (!signature || !webhookSecret) {
+    log.error("Missing webhook signature", { status: 400 });
     return new Response(JSON.stringify({ error: "Missing webhook signature" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -67,6 +72,7 @@ Deno.serve(async (req) => {
   const payload = await req.text();
   const valid = await verifyStripeSignature(payload, signature, webhookSecret);
   if (!valid) {
+    log.error("Invalid signature", { status: 400 });
     return new Response(JSON.stringify({ error: "Invalid signature" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
