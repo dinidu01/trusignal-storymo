@@ -1696,6 +1696,30 @@ export function SetupMetaAdsStep({
               )}
             </div>
 
+            {adImageUrl && (
+              <div className="bg-gray-900 rounded-xl p-8 border border-gray-800 mb-6">
+                <h3 className="text-xl font-semibold text-white mb-4">Ad Preview</h3>
+                <div className="bg-gray-800 rounded-lg overflow-hidden border border-gray-700">
+                  <div className="aspect-square">
+                    {uploadedMediaType === 'video' ? (
+                      <video src={adImageUrl} controls className="w-full h-full object-cover" />
+                    ) : (
+                      <img src={adImageUrl} alt="Ad preview" className="w-full h-full object-cover" />
+                    )}
+                  </div>
+                  <div className="p-4">
+                    <h5 className="text-white font-semibold mb-1 text-sm">{adHeadline || 'Your headline'}</h5>
+                    <p className="text-gray-400 text-xs mb-3 line-clamp-2">
+                      {adDescription || 'Your ad description will appear here.'}
+                    </p>
+                    <button className="w-full py-2 bg-indigo-600 text-white rounded text-xs font-semibold">
+                      {adCta || 'Learn More'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Ad Copy */}
             <div className="bg-gray-900 rounded-xl p-8 border border-gray-800 mb-6">
               <h3 className="text-xl font-semibold text-white mb-4">Ad Creative</h3>
