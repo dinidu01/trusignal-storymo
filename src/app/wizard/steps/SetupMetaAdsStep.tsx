@@ -276,7 +276,7 @@ export function SetupMetaAdsStep({
         if (response?.authResponse?.accessToken) {
           const accessToken = response.authResponse.accessToken;
           setMetaAccessToken(accessToken);
-          localStorage.setItem('trusignal.metaAccessToken', accessToken);
+          sessionStorage.setItem('trusignal.metaAccessToken', accessToken);
           setMetaAuthStatus('connected');
           fetchFacebookUserProfile(accessToken);
           fetchManagedFacebookPages(accessToken);
@@ -332,7 +332,7 @@ export function SetupMetaAdsStep({
       setShowMetaAccountMenu(false);
       setMetaErrorMessage(null);
       setMetaAccessToken(null);
-      localStorage.removeItem('trusignal.metaAccessToken');
+      sessionStorage.removeItem('trusignal.metaAccessToken');
     });
   };
 
@@ -404,7 +404,7 @@ export function SetupMetaAdsStep({
 
   useEffect(() => {
     if (metaAccessToken) return;
-    const storedToken = localStorage.getItem('trusignal.metaAccessToken');
+    const storedToken = sessionStorage.getItem('trusignal.metaAccessToken');
     if (storedToken) {
       setMetaAccessToken(storedToken);
     }
