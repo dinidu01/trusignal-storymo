@@ -153,8 +153,90 @@ Deno.serve(async (req) => {
     });
   }
 
+  const authHeader = req.headers.get("authorization");
+  if (!authHeader) {
+    log.error("Missing Authorization header", { status: 401 });
+    return new Response(JSON.stringify({ error: "Missing Authorization header" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+  if (!supabaseUrl || !supabaseAnonKey) {
+    log.error("Missing SUPABASE_URL or SUPABASE_ANON_KEY", { status: 500 });
+    return new Response(JSON.stringify({ error: "Missing SUPABASE_URL or SUPABASE_ANON_KEY" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const token = authHeader.replace("Bearer ", "");
+  const userResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      apikey: supabaseAnonKey,
+    },
+  });
+
+  if (!userResponse.ok) {
+    log.error("Unable to resolve user", { status: 401 });
+    return new Response(JSON.stringify({ error: "Unable to resolve user" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const userData = await userResponse.json();
+  const userId = userData?.id ? String(userData.id) : null;
+  if (!userId) {
+    log.error("Missing user id", { status: 401 });
+    return new Response(JSON.stringify({ error: "Missing user id" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   const model = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini";
   const schema = buildSchema(segmentCount);
+
+  const ideaId = payload.idea_id?.trim();
+  const subdomainSet = new Set<string>();
+
+  const listSubdomains = async (userId: string) => {
+    const listResponse = await fetch(
+      `${supabaseUrl}/rest/v1/ideas?select=id,metadata&user_id=eq.${userId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          apikey: supabaseAnonKey,
+        },
+      },
+    );
+
+    if (!listResponse.ok) {
+      return;
+    }
+
+    const rows = await listResponse.json();
+    if (!Array.isArray(rows)) {
+      return;
+    }
+
+    for (const row of rows) {
+      if (ideaId && row?.id === ideaId) {
+        continue;
+      }
+      const suggested = row?.metadata?.suggested_subdomain;
+      if (typeof suggested === "string" && suggested.trim()) {
+        subdomainSet.add(suggested.trim().toLowerCase());
+      }
+    }
+  };
+
+  await listSubdomains(userId);
+  const existingSubdomains = Array.from(subdomainSet).sort().slice(0, 50);
 
   const prompt = [
     `Idea: ${idea}`,
@@ -162,6 +244,9 @@ Deno.serve(async (req) => {
     `Problem to solve (base): ${problem}`,
     `Generate ${segmentCount} audience segments.`,
     `Also suggest a short subdomain (2-16 chars, lowercase letters/numbers, no spaces) for ${idea}.`,
+    existingSubdomains.length > 0
+      ? `Avoid these existing subdomain slugs: ${existingSubdomains.join(", ")}. If there is a conflict, choose a unique alternative.`
+      : `Ensure the suggested subdomain does not conflict with existing domains.`,
     `For each segment, return: segment_name, audience, problem, facebook_page_bio, instagram_page_bio,`,
     `meta_ad_headlines (3), meta_ad_descriptions (3), facebook_ad_campaign_texts (3).`,
     `facebook_ad_campaign_texts must follow the format: "[Target audience]! [a compelling pain point]"`,
@@ -242,53 +327,6 @@ Deno.serve(async (req) => {
 
   try {
     const json = JSON.parse(outputText);
-
-    const authHeader = req.headers.get("authorization");
-    if (!authHeader) {
-      log.error("Missing Authorization header", { status: 401 });
-      return new Response(JSON.stringify({ error: "Missing Authorization header" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
-    if (!supabaseUrl || !supabaseAnonKey) {
-      log.error("Missing SUPABASE_URL or SUPABASE_ANON_KEY", { status: 500 });
-      return new Response(JSON.stringify({ error: "Missing SUPABASE_URL or SUPABASE_ANON_KEY" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const token = authHeader.replace("Bearer ", "");
-    const userResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        apikey: supabaseAnonKey,
-      },
-    });
-
-    if (!userResponse.ok) {
-      log.error("Unable to resolve user", { status: 401 });
-      return new Response(JSON.stringify({ error: "Unable to resolve user" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const userData = await userResponse.json();
-    const userId = userData?.id ? String(userData.id) : null;
-    if (!userId) {
-      log.error("Missing user id", { status: 401 });
-      return new Response(JSON.stringify({ error: "Missing user id" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const ideaId = payload.idea_id?.trim();
     let existingMetadata: Record<string, unknown> | null = null;
 
     if (ideaId) {

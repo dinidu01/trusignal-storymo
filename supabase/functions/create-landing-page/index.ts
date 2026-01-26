@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
     });
   }
 
-  const authHeader = req.headers.get("authorization");
+  const authHeader = req.headers.get("Authorization");
   if (!authHeader) {
     log.error("Missing Authorization header", { status: 401 });
     return new Response(JSON.stringify({ error: "Missing Authorization header" }), {
@@ -57,6 +57,8 @@ Deno.serve(async (req) => {
   }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+
   if (!supabaseUrl) {
     log.error("Missing SUPABASE_URL", { status: 500 });
     return new Response(JSON.stringify({ error: "Missing SUPABASE_URL" }), {
@@ -75,16 +77,15 @@ Deno.serve(async (req) => {
     },
   });
 
+  let existingId: string | null = null;
   if (!existingResponse.ok) {
-    log.error("Unable to load landing pages", { status: existingResponse.status });
-    return new Response(JSON.stringify({ error: "Unable to load landing pages" }), {
+    log.error("Unable to load landing pages; creating new record", {
       status: existingResponse.status,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+  } else {
+    const existing = await existingResponse.json();
+    existingId = Array.isArray(existing) ? existing[0]?.id : null;
   }
-
-  const existing = await existingResponse.json();
-  const existingId = Array.isArray(existing) ? existing[0]?.id : null;
 
   const basePayload = {
     selected_domain: payload.selected_domain ?? null,
@@ -94,19 +95,41 @@ Deno.serve(async (req) => {
     updated_at: new Date().toISOString(),
   };
 
+  const token = authHeader.replace("Bearer ", "");
+  const userResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        apikey: supabaseAnonKey,
+      },
+  });
+  const userData = await userResponse.json();
+  const userId = userData?.id ? String(userData.id) : null;
+  if (!userId) {
+    log.error("Missing user id", { status: 401 });
+    return new Response(JSON.stringify({ error: "Missing user id" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  log.info('upserting landing page for userid ',{ userId} );
+
+
   const writeResponse = await fetch(
     `${supabaseUrl}/rest/v1/landing_pages${existingId ? `?id=eq.${existingId}` : ""}`,
     {
       method: existingId ? "PATCH" : "POST",
       headers: {
-        Authorization: authHeader,
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
         Prefer: "return=representation",
+        apikey: supabaseAnonKey,
       },
       body: JSON.stringify(
         existingId
           ? basePayload
           : {
+              user_id: userId,
               idea_id: ideaId,
               selected_domain: basePayload.selected_domain,
               template_id: basePayload.template_id,
