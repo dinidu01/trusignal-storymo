@@ -1639,7 +1639,10 @@ export function SetupMetaAdsStep({
               <h3 className="text-xl font-semibold text-white mb-4">Ad Image</h3>
               <div className="grid grid-cols-2 gap-4 mb-6">
                 <button
-                  onClick={() => setAdImageMethod('upload')}
+                  onClick={() => {
+                    setAdImageMethod('upload');
+                    uploadInputRef.current?.click();
+                  }}
                   className={`p-6 rounded-lg border-2 transition-all ${
                     adImageMethod === 'upload' ? 'border-indigo-500 bg-indigo-500/10' : 'border-gray-700 hover:border-gray-600'
                   }`}
@@ -1682,14 +1685,6 @@ export function SetupMetaAdsStep({
                     onChange={(e) => void handleUploadImage(e.target.files?.[0] ?? null)}
                     className="hidden"
                   />
-                  <button
-                    type="button"
-                    onClick={() => uploadInputRef.current?.click()}
-                    disabled={isUploadingImage}
-                    className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white rounded-lg hover:border-indigo-500 hover:text-indigo-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Choose file
-                  </button>
                   {isUploadingImage && <p className="text-indigo-200 text-sm mt-2">Uploading...</p>}
                   {uploadImageError && (
                     <div className="mt-2 flex items-center justify-between gap-3 text-red-400 text-sm">
