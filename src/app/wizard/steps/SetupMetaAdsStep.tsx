@@ -1652,8 +1652,8 @@ export function SetupMetaAdsStep({
                       adImageMethod === 'upload' ? 'text-indigo-400' : 'text-gray-400'
                     }`}
                   />
-                  <h4 className="text-lg font-semibold text-white mb-1">Upload Image</h4>
-                  <p className="text-gray-400 text-sm">Use your own image</p>
+                  <h4 className="text-lg font-semibold text-white mb-1">Upload Image/Video</h4>
+                  <p className="text-gray-400 text-sm">Use your own creative</p>
                 </button>
                 <button
                   onClick={handleGenerateImage}
