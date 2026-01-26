@@ -173,7 +173,14 @@ export function CreateLandingPageStep({
       return;
     }
 
-    const hasResearch = Boolean(activeIdea.research_data);
+    const research = activeIdea.research_data;
+    const hasResearch =
+      research !== null &&
+      research !== undefined &&
+      (typeof research !== 'string' || research.trim().length > 0) &&
+      (typeof research !== 'object' ||
+        Array.isArray(research) ||
+        Object.keys(research as Record<string, unknown>).length > 0);
     const matches =
       (activeIdea.idea_text ?? '') === ideaDescription &&
       (activeIdea.target_audience ?? '') === targetAudience &&

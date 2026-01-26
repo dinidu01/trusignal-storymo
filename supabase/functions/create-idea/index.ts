@@ -55,23 +55,43 @@ Deno.serve(async (req) => {
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
-  if (!supabaseUrl || !supabaseAnonKey) {
-    log.error("Missing SUPABASE_URL or SUPABASE_ANON_KEY", { status: 500 });
-    return new Response(JSON.stringify({ error: "Missing SUPABASE_URL or SUPABASE_ANON_KEY" }), {
+
+  if (!supabaseUrl) {
+    log.error("Missing SUPABASE_URL", { status: 500 });
+    return new Response(JSON.stringify({ error: "Missing SUPABASE_URL" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 
+  const token = authHeader.replace("Bearer ", "");
+  const userResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        apikey: supabaseAnonKey,
+      },
+  });
+  const userData = await userResponse.json();
+  const userId = userData?.id ? String(userData.id) : null;
+  if (!userId) {
+    log.error("Missing user id", { status: 401 });
+    return new Response(JSON.stringify({ error: "Missing user id" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+
   const response = await fetch(`${supabaseUrl}/rest/v1/ideas`, {
     method: "POST",
     headers: {
-      Authorization: authHeader,
-      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
       Prefer: "return=representation",
+      apikey: supabaseAnonKey,
     },
     body: JSON.stringify({
+      user_id: userId,
       idea_text: ideaText,
       metadata: payload.metadata ?? {},
     }),
