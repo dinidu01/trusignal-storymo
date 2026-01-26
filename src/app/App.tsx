@@ -627,15 +627,12 @@ export default function App() {
                     setProblemSolved('');
 
                     const createIdea = async () => {
-                      const { data, error } = await supabase
-                        .from('ideas')
-                        .insert({ idea_text: nextIdea, metadata: { source: 'new-idea' } })
-                        .select('id,idea_text,target_audience,problem_solved,research_data,metadata,created_at')
-                        .single();
+                      const { data, error } = await supabase.functions.invoke('create-idea', {
+                        body: { idea_text: nextIdea, metadata: { source: 'new-idea' } },
+                      });
 
-                      if (!error && data) {
-                        setIdeas((prev) => [data, ...prev.filter((item) => item.id !== data.id)]);
-                        selectIdea(data);
+                      if (!error) {
+                        await refreshIdeas(data?.idea_id ?? null);
                       }
                     };
 
