@@ -60,6 +60,7 @@ export function CreateLandingPageStep({
   const [buyDomainError, setBuyDomainError] = useState<string | null>(null);
   const hasHydratedInputsRef = useRef(false);
   const [suggestedSubdomain, setSuggestedSubdomain] = useState<string | null>(null);
+  const lastIdeaIdRef = useRef<string | null>(null);
 
   const ideaSlug =
     ideaDescription
@@ -149,8 +150,16 @@ export function CreateLandingPageStep({
   }, [purchasedDomain, setDomainChoice]);
 
   useEffect(() => {
+    if (ideaId !== lastIdeaIdRef.current) {
+      hasHydratedInputsRef.current = false;
+      lastIdeaIdRef.current = ideaId ?? null;
+    }
+  }, [ideaId]);
+
+  useEffect(() => {
     if (hasHydratedInputsRef.current) return;
-    const stored = localStorage.getItem('trusignal.ideaInputs');
+    const key = ideaId ? `trusignal.ideaInputs.${ideaId}` : 'trusignal.ideaInputs';
+    const stored = localStorage.getItem(key);
     if (!stored) return;
 
     try {
@@ -188,7 +197,8 @@ export function CreateLandingPageStep({
 
   useEffect(() => {
     const storedAnalysis = localStorage.getItem('trusignal.analyzeIdea');
-    const storedInputs = localStorage.getItem('trusignal.analyzeIdeaInputs');
+    const inputsKey = ideaId ? `trusignal.analyzeIdeaInputs.${ideaId}` : 'trusignal.analyzeIdeaInputs';
+    const storedInputs = localStorage.getItem(inputsKey);
     if (!storedAnalysis || !storedInputs) {
       if (ideaResearchComplete) {
         setIdeaResearchComplete(false);
@@ -212,7 +222,7 @@ export function CreateLandingPageStep({
     } catch (_error) {
       // Ignore stored data errors.
     }
-  }, [ideaDescription, ideaResearchComplete, problemSolved, targetAudience]);
+  }, [ideaDescription, ideaId, ideaResearchComplete, problemSolved, targetAudience]);
 
   useEffect(() => {
     const payload = {
@@ -221,8 +231,9 @@ export function CreateLandingPageStep({
       problemSolved,
     };
 
-    localStorage.setItem('trusignal.ideaInputs', JSON.stringify(payload));
-  }, [ideaDescription, targetAudience, problemSolved]);
+    const key = ideaId ? `trusignal.ideaInputs.${ideaId}` : 'trusignal.ideaInputs';
+    localStorage.setItem(key, JSON.stringify(payload));
+  }, [ideaDescription, ideaId, targetAudience, problemSolved]);
 
   const templateOptions = [
     { id: 'sample-a', name: 'Sample A', desc: 'Clean, modern layout' },
@@ -315,8 +326,9 @@ export function CreateLandingPageStep({
         setIdeaId(String(data.idea_id));
       }
 
+      const inputsKey = ideaId ? `trusignal.analyzeIdeaInputs.${ideaId}` : 'trusignal.analyzeIdeaInputs';
       localStorage.setItem(
-        'trusignal.analyzeIdeaInputs',
+        inputsKey,
         JSON.stringify({
           ideaDescription,
           targetAudience,

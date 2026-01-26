@@ -363,8 +363,9 @@ export default function App() {
 
     if (idea.research_data) {
       localStorage.setItem('trusignal.analyzeIdea', JSON.stringify(idea.research_data));
+      const inputsKey = `trusignal.analyzeIdeaInputs.${idea.id}`;
       localStorage.setItem(
-        'trusignal.analyzeIdeaInputs',
+        inputsKey,
         JSON.stringify({
           ideaDescription: nextIdeaText,
           targetAudience: nextAudience,
