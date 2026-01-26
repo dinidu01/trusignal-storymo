@@ -177,6 +177,8 @@ export function SetupMetaAdsStep({
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [uploadImageError, setUploadImageError] = useState<string | null>(null);
   const [uploadedMediaType, setUploadedMediaType] = useState<'image' | 'video' | null>(null);
+  const [lastUploadedFile, setLastUploadedFile] = useState<File | null>(null);
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [moreCountryQuery, setMoreCountryQuery] = useState('');
   const [placeQuery, setPlaceQuery] = useState('');
@@ -1100,6 +1102,7 @@ export function SetupMetaAdsStep({
       return;
     }
 
+    setLastUploadedFile(file);
     setUploadImageError(null);
     setIsUploadingImage(true);
     setAdImageMethod('upload');
@@ -1673,13 +1676,34 @@ export function SetupMetaAdsStep({
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">Upload image or video</label>
                   <input
+                    ref={uploadInputRef}
                     type="file"
                     accept="image/*,video/*"
                     onChange={(e) => void handleUploadImage(e.target.files?.[0] ?? null)}
-                    className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
+                    className="hidden"
                   />
+                  <button
+                    type="button"
+                    onClick={() => uploadInputRef.current?.click()}
+                    disabled={isUploadingImage}
+                    className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white rounded-lg hover:border-indigo-500 hover:text-indigo-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Choose file
+                  </button>
                   {isUploadingImage && <p className="text-indigo-200 text-sm mt-2">Uploading...</p>}
-                  {uploadImageError && <p className="text-red-400 text-sm mt-2">{uploadImageError}</p>}
+                  {uploadImageError && (
+                    <div className="mt-2 flex items-center justify-between gap-3 text-red-400 text-sm">
+                      <span>{uploadImageError}</span>
+                      <button
+                        type="button"
+                        onClick={() => void handleUploadImage(lastUploadedFile)}
+                        disabled={!lastUploadedFile || isUploadingImage}
+                        className="px-3 py-1.5 rounded-md bg-gray-800 text-white text-xs font-semibold hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  )}
                   {adImageUrl && uploadedMediaType === 'video' ? (
                     <video src={adImageUrl} controls className="w-full rounded-lg mt-4" />
                   ) : adImageUrl ? (
