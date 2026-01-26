@@ -69,6 +69,8 @@ export function CreateLandingPageStep({
   const [researchError, setResearchError] = useState<string | null>(null);
   const [isBuyingDomain, setIsBuyingDomain] = useState(false);
   const [buyDomainError, setBuyDomainError] = useState<string | null>(null);
+  const [isPublishingLanding, setIsPublishingLanding] = useState(false);
+  const [publishLandingError, setPublishLandingError] = useState<string | null>(null);
   const [suggestedSubdomain, setSuggestedSubdomain] = useState<string | null>(null);
 
   const ideaSlug =
@@ -284,6 +286,38 @@ export function CreateLandingPageStep({
     } finally {
       setIsResearchingIdea(false);
     }
+  };
+
+  const handlePublishLandingPage = async () => {
+    if (!ideaId || !selectedDomain || !selectedTemplate) {
+      setPublishLandingError('Select a template and domain before publishing.');
+      return;
+    }
+
+    setIsPublishingLanding(true);
+    setPublishLandingError(null);
+
+    const { error } = await supabase.functions.invoke('create-landing-page', {
+      body: {
+        idea_id: ideaId,
+        selected_domain: selectedDomain,
+        template_id: selectedTemplate,
+        status: 'published',
+        metadata: {
+          domain_choice: domainChoice,
+          custom_domain_mode: customDomainMode,
+        },
+      },
+    });
+
+    if (error) {
+      setPublishLandingError('Unable to publish your landing page right now.');
+      setIsPublishingLanding(false);
+      return;
+    }
+
+    setIsPublishingLanding(false);
+    setLandingSubStep(4);
   };
 
   return (
@@ -939,13 +973,15 @@ export function CreateLandingPageStep({
                 Back
               </button>
               <button
-                onClick={() => setLandingSubStep(4)}
-                disabled={!canDeployPage}
-                className="px-8 py-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold text-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => void handlePublishLandingPage()}
+                disabled={!canDeployPage || isPublishingLanding}
+                className="px-8 py-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold text-lg disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
               >
+                {isPublishingLanding ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
                 Make Site Live
               </button>
             </div>
+            {publishLandingError && <div className="mt-4 text-right text-sm text-red-300">{publishLandingError}</div>}
           </div>
         </div>
       )}
