@@ -62,14 +62,6 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  useEffect(() => {
-    if (ideaId) return;
-    const storedIdeaId = localStorage.getItem('trusignal.ideaId');
-    if (storedIdeaId) {
-      setIdeaId(storedIdeaId);
-    }
-  }, [ideaId]);
-
   const navigate = (path: string) => {
     if (path === currentPath) return;
     window.history.pushState({}, '', path);
@@ -255,69 +247,23 @@ export default function App() {
     if (!isLoggedIn || !supabase) return;
     const loadIdeas = async () => {
       setIsIdeasLoading(true);
-      const { data, error } = await supabase
-        .from('ideas')
-        .select('id,idea_text,target_audience,problem_solved,research_data,metadata,created_at')
-        .order('created_at', { ascending: false });
-      if (!error && Array.isArray(data)) {
-        setIdeas(data);
-        if (!ideaId && data.length > 0) {
-          selectIdea(data[0]);
+      const { data, error } = await supabase.functions.invoke('list-ideas');
+      if (!error && Array.isArray(data?.ideas)) {
+        setIdeas(data.ideas);
+        if (data.ideas.length > 0) {
+          const preferred = ideaId ? data.ideas.find((idea) => idea.id === ideaId) : null;
+          if (preferred) {
+            selectIdea(preferred);
+          } else if (!ideaId) {
+            selectIdea(data.ideas[0]);
+          }
         }
       }
       setIsIdeasLoading(false);
     };
 
     void loadIdeas();
-  }, [ideaId, isLoggedIn]);
-
-  useEffect(() => {
-    if (!isLoggedIn || !supabase) return;
-    const pendingIdea = localStorage.getItem('trusignal.pendingIdea');
-    if (!pendingIdea) return;
-    if (ideaId) {
-      localStorage.removeItem('trusignal.pendingIdea');
-      return;
-    }
-
-    const createIdea = async () => {
-      const { data, error } = await supabase
-        .from('ideas')
-        .insert({
-          idea_text: pendingIdea,
-          metadata: { source: 'preauth' },
-        })
-        .select('id,idea_text,target_audience,problem_solved,research_data,metadata,created_at')
-        .single();
-
-      if (!error && data) {
-        setIdeas((prev) => [data, ...prev.filter((item) => item.id !== data.id)]);
-        selectIdea(data);
-      }
-
-      localStorage.removeItem('trusignal.pendingIdea');
-    };
-
-    void createIdea();
-  }, [ideaId, isLoggedIn]);
-
-  useEffect(() => {
-    if (!ideaId || !supabase) return;
-    if (ideas.some((idea) => idea.id === ideaId)) return;
-
-    const loadIdea = async () => {
-      const { data, error } = await supabase
-        .from('ideas')
-        .select('id,idea_text,target_audience,problem_solved,research_data,metadata,created_at')
-        .eq('id', ideaId)
-        .single();
-      if (!error && data) {
-        setIdeas((prev) => [data, ...prev.filter((item) => item.id !== data.id)]);
-      }
-    };
-
-    void loadIdea();
-  }, [ideaId, ideas, supabase]);
+  }, [isLoggedIn]);
 
   const toggleQuestion = (index: number) => {
     setActiveQuestion(activeQuestion === index ? null : index);
@@ -329,17 +275,6 @@ export default function App() {
     }
 
     setIsLoggedIn(false);
-  };
-
-  const persistIdeaInputs = (nextIdea: string, nextAudience = '', nextProblem = '') => {
-    localStorage.setItem(
-      'trusignal.ideaInputs',
-      JSON.stringify({
-        ideaDescription: nextIdea,
-        targetAudience: nextAudience,
-        problemSolved: nextProblem,
-      })
-    );
   };
 
   const selectIdea = (idea: {
@@ -355,32 +290,33 @@ export default function App() {
     const nextProblem = idea.problem_solved ?? '';
 
     setIdeaId(idea.id);
-    localStorage.setItem('trusignal.ideaId', idea.id);
     setIdeaDescription(nextIdeaText);
     setTargetAudience(nextAudience);
     setProblemSolved(nextProblem);
-    persistIdeaInputs(nextIdeaText, nextAudience, nextProblem);
-
-    if (idea.research_data) {
-      localStorage.setItem('trusignal.analyzeIdea', JSON.stringify(idea.research_data));
-      const inputsKey = `trusignal.analyzeIdeaInputs.${idea.id}`;
-      localStorage.setItem(
-        inputsKey,
-        JSON.stringify({
-          ideaDescription: nextIdeaText,
-          targetAudience: nextAudience,
-          problemSolved: nextProblem,
-        })
-      );
-    }
-
-    const suggestedSubdomain = idea.metadata?.suggested_subdomain;
-    if (typeof suggestedSubdomain === 'string' && suggestedSubdomain.trim()) {
-      localStorage.setItem('trusignal.suggestedSubdomain', suggestedSubdomain.trim());
-    }
 
     setActiveStep('landing');
     setLandingSubStep(1);
+  };
+
+  const refreshIdeas = async (preferredIdeaId?: string | null) => {
+    if (!supabase) return;
+    setIsIdeasLoading(true);
+    const { data, error } = await supabase.functions.invoke('list-ideas');
+    if (!error && Array.isArray(data?.ideas)) {
+      setIdeas(data.ideas);
+      if (data.ideas.length > 0) {
+        const targetId = preferredIdeaId ?? ideaId ?? null;
+        const preferred = targetId ? data.ideas.find((idea) => idea.id === targetId) : null;
+        if (preferred) {
+          if (ideaId !== preferred.id) {
+            selectIdea(preferred);
+          }
+        } else {
+          selectIdea(data.ideas[0]);
+        }
+      }
+    }
+    setIsIdeasLoading(false);
   };
 
   const steps = [
@@ -579,6 +515,8 @@ export default function App() {
                 onDismissDomainCheckoutNotice={() => setCheckoutNotice(null)}
                 ideaId={ideaId}
                 setIdeaId={setIdeaId}
+                activeIdea={activeIdea}
+                onRefreshIdeas={refreshIdeas}
               />
             )}
 
@@ -633,6 +571,7 @@ export default function App() {
                 adsCheckoutStatus={checkoutNotice?.type === 'ads' ? checkoutNotice.status : null}
                 onDismissAdsCheckoutNotice={() => setCheckoutNotice(null)}
                 ideaId={ideaId}
+                activeIdea={activeIdea}
               />
             )}
 
@@ -686,8 +625,6 @@ export default function App() {
                     setIdeaDescription(nextIdea);
                     setTargetAudience('');
                     setProblemSolved('');
-                    persistIdeaInputs(nextIdea, '', '');
-                    localStorage.removeItem('trusignal.analyzeIdea');
 
                     const createIdea = async () => {
                       const { data, error } = await supabase
@@ -773,9 +710,6 @@ export default function App() {
           <button
             className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium"
             onClick={() => {
-              if (heroIdeaText.trim()) {
-                localStorage.setItem('trusignal.pendingIdea', heroIdeaText.trim());
-              }
               setShowAuthModal(true);
             }}
           >
@@ -805,9 +739,6 @@ export default function App() {
               <button
                 className="absolute right-2 top-1/2 -translate-y-1/2 p-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-600/25"
                 onClick={() => {
-                  if (heroIdeaText.trim()) {
-                    localStorage.setItem('trusignal.pendingIdea', heroIdeaText.trim());
-                  }
                   setShowAuthModal(true);
                 }}
               >

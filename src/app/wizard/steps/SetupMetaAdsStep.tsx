@@ -50,6 +50,14 @@ type SetupMetaAdsStepProps = {
   adsCheckoutStatus: 'success' | 'cancel' | null;
   onDismissAdsCheckoutNotice: () => void;
   ideaId: string | null;
+  activeIdea: {
+    id: string;
+    idea_text: string;
+    target_audience?: string | null;
+    problem_solved?: string | null;
+    research_data?: unknown | null;
+    metadata?: Record<string, unknown> | null;
+  } | null;
 };
 
 declare global {
@@ -144,6 +152,7 @@ export function SetupMetaAdsStep({
   adsCheckoutStatus,
   onDismissAdsCheckoutNotice,
   ideaId,
+  activeIdea,
 }: SetupMetaAdsStepProps) {
   const facebookAppId = import.meta.env.VITE_FACEBOOK_APP_ID as string | undefined;
 
@@ -541,12 +550,13 @@ export function SetupMetaAdsStep({
   }, [adImageUrl, facebookPageUrl, ideaId, instagramPageUrl, setFacebookPageUrl, setInstagramPageUrl, setAdImageMethod, setAdImageUrl]);
 
   useEffect(() => {
-    if (suggestedSubdomain) return;
-    const stored = localStorage.getItem('trusignal.suggestedSubdomain');
-    if (stored) {
-      setSuggestedSubdomain(stored);
+    const suggested = activeIdea?.metadata?.suggested_subdomain;
+    if (typeof suggested === 'string' && suggested.trim()) {
+      setSuggestedSubdomain(suggested.trim());
+    } else {
+      setSuggestedSubdomain(null);
     }
-  }, [suggestedSubdomain]);
+  }, [activeIdea]);
 
   useEffect(() => {
     if (!ideaId) return;
@@ -907,44 +917,52 @@ export function SetupMetaAdsStep({
   }, [adsCheckoutStatus]);
 
   useEffect(() => {
-    const stored = localStorage.getItem('trusignal.analyzeIdea');
-    if (!stored) return;
+    if (!activeIdea?.research_data) return;
 
-    try {
-      const parsed = JSON.parse(stored) as {
-        segments?: Array<{
-          meta_ad_headlines?: string[];
-          meta_ad_descriptions?: string[];
-        }>;
-      };
+    let parsed = activeIdea.research_data as {
+      segments?: Array<{
+        meta_ad_headlines?: string[];
+        meta_ad_descriptions?: string[];
+      }>;
+    };
 
-      const firstSegment = parsed.segments?.[0];
-      const headlines = Array.isArray(firstSegment?.meta_ad_headlines)
-        ? firstSegment.meta_ad_headlines.filter(Boolean).slice(0, 3)
-        : [];
-      const descriptions = Array.isArray(firstSegment?.meta_ad_descriptions)
-        ? firstSegment.meta_ad_descriptions.filter(Boolean).slice(0, 3)
-        : [];
-
-      if (headlines.length > 0) {
-        setHeadlineOptions(headlines);
-        if (!adHeadline) {
-          setAdHeadline(headlines[0]);
-          setHeadlineMode('preset');
-        }
+    if (typeof activeIdea.research_data === 'string') {
+      try {
+        parsed = JSON.parse(activeIdea.research_data) as {
+          segments?: Array<{
+            meta_ad_headlines?: string[];
+            meta_ad_descriptions?: string[];
+          }>;
+        };
+      } catch {
+        return;
       }
-
-      if (descriptions.length > 0) {
-        setDescriptionOptions(descriptions);
-        if (!adDescription) {
-          setAdDescription(descriptions[0]);
-          setDescriptionMode('preset');
-        }
-      }
-    } catch (_error) {
-      // Ignore stored data errors.
     }
-  }, [adHeadline, adDescription, setAdDescription, setAdHeadline]);
+
+    const firstSegment = parsed.segments?.[0];
+    const headlines = Array.isArray(firstSegment?.meta_ad_headlines)
+      ? firstSegment.meta_ad_headlines.filter(Boolean).slice(0, 3)
+      : [];
+    const descriptions = Array.isArray(firstSegment?.meta_ad_descriptions)
+      ? firstSegment.meta_ad_descriptions.filter(Boolean).slice(0, 3)
+      : [];
+
+    if (headlines.length > 0) {
+      setHeadlineOptions(headlines);
+      if (!adHeadline) {
+        setAdHeadline(headlines[0]);
+        setHeadlineMode('preset');
+      }
+    }
+
+    if (descriptions.length > 0) {
+      setDescriptionOptions(descriptions);
+      if (!adDescription) {
+        setAdDescription(descriptions[0]);
+        setDescriptionMode('preset');
+      }
+    }
+  }, [activeIdea, adHeadline, adDescription, setAdDescription, setAdHeadline]);
 
   useEffect(() => {
     const storedImage = localStorage.getItem('trusignal.adImage');

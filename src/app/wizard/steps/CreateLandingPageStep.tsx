@@ -1,5 +1,5 @@
 import { CheckCircle2, Eye, ExternalLink, Lightbulb, Loader2, Rocket, X, Zap } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabaseClient';
 
 type CreateLandingPageStepProps = {
@@ -24,6 +24,15 @@ type CreateLandingPageStepProps = {
   onDismissDomainCheckoutNotice: () => void;
   ideaId: string | null;
   setIdeaId: (value: string | null) => void;
+  activeIdea: {
+    id: string;
+    idea_text: string;
+    target_audience?: string | null;
+    problem_solved?: string | null;
+    research_data?: unknown | null;
+    metadata?: Record<string, unknown> | null;
+  } | null;
+  onRefreshIdeas: (preferredIdeaId?: string | null) => void;
 };
 
 export function CreateLandingPageStep({
@@ -48,6 +57,8 @@ export function CreateLandingPageStep({
   onDismissDomainCheckoutNotice,
   ideaId,
   setIdeaId,
+  activeIdea,
+  onRefreshIdeas,
 }: CreateLandingPageStepProps) {
   const [previewTemplateId, setPreviewTemplateId] = useState<string | null>(null);
   const [customDomainMode, setCustomDomainMode] = useState<'have' | 'buy' | null>(null);
@@ -58,9 +69,7 @@ export function CreateLandingPageStep({
   const [researchError, setResearchError] = useState<string | null>(null);
   const [isBuyingDomain, setIsBuyingDomain] = useState(false);
   const [buyDomainError, setBuyDomainError] = useState<string | null>(null);
-  const hasHydratedInputsRef = useRef(false);
   const [suggestedSubdomain, setSuggestedSubdomain] = useState<string | null>(null);
-  const lastIdeaIdRef = useRef<string | null>(null);
 
   const ideaSlug =
     ideaDescription
@@ -150,90 +159,27 @@ export function CreateLandingPageStep({
   }, [purchasedDomain, setDomainChoice]);
 
   useEffect(() => {
-    if (ideaId !== lastIdeaIdRef.current) {
-      hasHydratedInputsRef.current = false;
-      lastIdeaIdRef.current = ideaId ?? null;
+    const suggested = activeIdea?.metadata?.suggested_subdomain;
+    if (typeof suggested === 'string' && suggested.trim()) {
+      setSuggestedSubdomain(suggested.trim());
+    } else {
+      setSuggestedSubdomain(null);
     }
-  }, [ideaId]);
+  }, [activeIdea]);
 
   useEffect(() => {
-    if (hasHydratedInputsRef.current) return;
-    const key = ideaId ? `trusignal.ideaInputs.${ideaId}` : 'trusignal.ideaInputs';
-    const stored = localStorage.getItem(key);
-    if (!stored) return;
-
-    try {
-      const parsed = JSON.parse(stored) as {
-        ideaDescription?: string;
-        targetAudience?: string;
-        problemSolved?: string;
-      };
-
-      if (!ideaDescription && parsed.ideaDescription) {
-        setIdeaDescription(parsed.ideaDescription);
-      }
-
-      if (!targetAudience && parsed.targetAudience) {
-        setTargetAudience(parsed.targetAudience);
-      }
-
-      if (!problemSolved && parsed.problemSolved) {
-        setProblemSolved(parsed.problemSolved);
-      }
-
-      hasHydratedInputsRef.current = true;
-    } catch (_error) {
-      // Ignore stored data errors.
-    }
-  }, [ideaDescription, targetAudience, problemSolved, setIdeaDescription, setProblemSolved, setTargetAudience]);
-
-  useEffect(() => {
-    if (suggestedSubdomain) return;
-    const stored = localStorage.getItem('trusignal.suggestedSubdomain');
-    if (stored) {
-      setSuggestedSubdomain(stored);
-    }
-  }, [suggestedSubdomain]);
-
-  useEffect(() => {
-    const storedAnalysis = localStorage.getItem('trusignal.analyzeIdea');
-    const inputsKey = ideaId ? `trusignal.analyzeIdeaInputs.${ideaId}` : 'trusignal.analyzeIdeaInputs';
-    const storedInputs = localStorage.getItem(inputsKey);
-    if (!storedAnalysis || !storedInputs) {
-      if (ideaResearchComplete) {
-        setIdeaResearchComplete(false);
-      }
+    if (!activeIdea) {
+      setIdeaResearchComplete(false);
       return;
     }
 
-    try {
-      const parsedInputs = JSON.parse(storedInputs) as {
-        ideaDescription?: string;
-        targetAudience?: string;
-        problemSolved?: string;
-      };
-
-      const matches =
-        parsedInputs.ideaDescription === ideaDescription &&
-        parsedInputs.targetAudience === targetAudience &&
-        parsedInputs.problemSolved === problemSolved;
-
-      setIdeaResearchComplete(matches);
-    } catch (_error) {
-      // Ignore stored data errors.
-    }
-  }, [ideaDescription, ideaId, ideaResearchComplete, problemSolved, targetAudience]);
-
-  useEffect(() => {
-    const payload = {
-      ideaDescription,
-      targetAudience,
-      problemSolved,
-    };
-
-    const key = ideaId ? `trusignal.ideaInputs.${ideaId}` : 'trusignal.ideaInputs';
-    localStorage.setItem(key, JSON.stringify(payload));
-  }, [ideaDescription, ideaId, targetAudience, problemSolved]);
+    const hasResearch = Boolean(activeIdea.research_data);
+    const matches =
+      (activeIdea.idea_text ?? '') === ideaDescription &&
+      (activeIdea.target_audience ?? '') === targetAudience &&
+      (activeIdea.problem_solved ?? '') === problemSolved;
+    setIdeaResearchComplete(hasResearch && matches);
+  }, [activeIdea, ideaDescription, problemSolved, targetAudience]);
 
   const templateOptions = [
     { id: 'sample-a', name: 'Sample A', desc: 'Clean, modern layout' },
@@ -317,26 +263,15 @@ export function CreateLandingPageStep({
 
       if (data?.suggested_subdomain) {
         const subdomain = String(data.suggested_subdomain);
-        localStorage.setItem('trusignal.suggestedSubdomain', subdomain);
         setSuggestedSubdomain(subdomain);
       }
 
-      if (data?.idea_id) {
-        localStorage.setItem('trusignal.ideaId', String(data.idea_id));
-        setIdeaId(String(data.idea_id));
+      const nextIdeaId = data?.idea_id ? String(data.idea_id) : ideaId;
+      if (nextIdeaId) {
+        setIdeaId(nextIdeaId);
       }
-
-      const inputsKey = ideaId ? `trusignal.analyzeIdeaInputs.${ideaId}` : 'trusignal.analyzeIdeaInputs';
-      localStorage.setItem(
-        inputsKey,
-        JSON.stringify({
-          ideaDescription,
-          targetAudience,
-          problemSolved,
-        })
-      );
-      localStorage.setItem('trusignal.analyzeIdea', JSON.stringify(data));
       setIdeaResearchComplete(true);
+      onRefreshIdeas(nextIdeaId ?? null);
     } catch (_error) {
       setResearchError('Unable to analyze your idea right now. Please try again.');
     } finally {
