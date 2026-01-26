@@ -174,6 +174,9 @@ export function SetupMetaAdsStep({
   const [descriptionMode, setDescriptionMode] = useState<'preset' | 'custom'>('preset');
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [uploadImageError, setUploadImageError] = useState<string | null>(null);
+  const [uploadedMediaType, setUploadedMediaType] = useState<'image' | 'video' | null>(null);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [moreCountryQuery, setMoreCountryQuery] = useState('');
   const [placeQuery, setPlaceQuery] = useState('');
@@ -1003,14 +1006,24 @@ export function SetupMetaAdsStep({
     const hydrateCreative = async () => {
       const { data, error } = await supabase.storage
         .from('idea-storage')
-        .list(`${ideaId}/ad-creatives`, { limit: 1, sortBy: { column: 'created_at', order: 'desc' } });
+        .list(`${ideaId}/ad-campaign`, { limit: 1, sortBy: { column: 'created_at', order: 'desc' } });
 
-      if (error || !data || data.length === 0) {
+      let entries = data;
+      let folder = 'ad-campaign';
+      if (error || !entries || entries.length === 0) {
+        const fallback = await supabase.storage
+          .from('idea-storage')
+          .list(`${ideaId}/ad-creatives`, { limit: 1, sortBy: { column: 'created_at', order: 'desc' } });
+        entries = fallback.data ?? [];
+        folder = 'ad-creatives';
+      }
+
+      if (!entries || entries.length === 0) {
         return;
       }
 
-      const latest = data[0];
-      const path = `${ideaId}/ad-creatives/${latest.name}`;
+      const latest = entries[0];
+      const path = `${ideaId}/${folder}/${latest.name}`;
       const { data: signedData, error: signedError } = await supabase.storage
         .from('idea-storage')
         .createSignedUrl(path, 3600);
@@ -1077,6 +1090,54 @@ export function SetupMetaAdsStep({
       setImageError('Unable to generate an image right now. Please try again.');
     } finally {
       setIsGeneratingImage(false);
+    }
+  };
+
+  const handleUploadImage = async (file: File | null) => {
+    if (!file) return;
+    if (!ideaId) {
+      setUploadImageError('Missing idea id. Please select an idea first.');
+      return;
+    }
+
+    setUploadImageError(null);
+    setIsUploadingImage(true);
+    setAdImageMethod('upload');
+    setUploadedMediaType(file.type.startsWith('video/') ? 'video' : 'image');
+
+    const toDataUrl = (input: File) =>
+      new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error('Failed to read file'));
+        reader.readAsDataURL(input);
+      });
+
+    try {
+      const imageDataUrl = await toDataUrl(file);
+      const safeName = file.name.trim() || `${crypto.randomUUID()}.png`;
+
+      const { data, error } = await supabase.functions.invoke('upload-ad-image', {
+        body: {
+          idea_id: ideaId,
+          image_data_url: imageDataUrl,
+          filename: safeName,
+        },
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      if (data?.signed_url) {
+        setAdImageUrl(data.signed_url);
+      } else {
+        setUploadImageError('Image uploaded, but unable to load preview.');
+      }
+    } catch (_error) {
+      setUploadImageError('Unable to upload image. Please try again.');
+    } finally {
+      setIsUploadingImage(false);
     }
   };
 
@@ -1610,14 +1671,20 @@ export function SetupMetaAdsStep({
 
               {adImageMethod === 'upload' && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Image URL</label>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Upload image or video</label>
                   <input
-                    type="text"
-                    placeholder="https://example.com/image.jpg"
-                    value={adImageUrl}
-                    onChange={(e) => setAdImageUrl(e.target.value)}
+                    type="file"
+                    accept="image/*,video/*"
+                    onChange={(e) => void handleUploadImage(e.target.files?.[0] ?? null)}
                     className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
                   />
+                  {isUploadingImage && <p className="text-indigo-200 text-sm mt-2">Uploading...</p>}
+                  {uploadImageError && <p className="text-red-400 text-sm mt-2">{uploadImageError}</p>}
+                  {adImageUrl && uploadedMediaType === 'video' ? (
+                    <video src={adImageUrl} controls className="w-full rounded-lg mt-4" />
+                  ) : adImageUrl ? (
+                    <img src={adImageUrl} alt="Uploaded preview" className="w-full rounded-lg mt-4" />
+                  ) : null}
                 </div>
               )}
 
