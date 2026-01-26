@@ -610,6 +610,26 @@ export function SetupMetaAdsStep({
     persistedInstagramPage,
   ]);
 
+  const persistMetaSelection = async (nextFacebook?: { id?: string; name?: string; link?: string }, nextInstagram?: { id?: string; username?: string; url?: string }) => {
+    if (!ideaId) return;
+
+    const payload = {
+      idea_id: ideaId,
+      facebook_page: nextFacebook ?? undefined,
+      instagram_page: nextInstagram ?? undefined,
+    };
+
+    if (!payload.facebook_page && !payload.instagram_page) return;
+
+    const payloadKey = JSON.stringify(payload);
+    if (payloadKey === lastSavedMetaRef.current) return;
+    lastSavedMetaRef.current = payloadKey;
+
+    await supabase.functions.invoke('save-meta-pages', {
+      body: payload,
+    });
+  };
+
   const availableCountries = [
     { name: 'United States', flag: '🇺🇸' },
     { name: 'Canada', flag: '🇨🇦' },
@@ -1235,7 +1255,26 @@ export function SetupMetaAdsStep({
                                     type="radio"
                                     name="facebook-page"
                                     checked={isSelected}
-                                    onChange={() => setFacebookPageUrl(page.link ?? '')}
+                                    onChange={() => {
+                                      const nextLink = page.link ?? '';
+                                      setFacebookPageUrl(nextLink);
+                                      void persistMetaSelection(
+                                        {
+                                          id: page.id,
+                                          name: page.name,
+                                          link: page.link ?? nextLink,
+                                        },
+                                        selectedInstagramAccount
+                                          ? {
+                                              id: selectedInstagramAccount.id,
+                                              username: selectedInstagramAccount.username,
+                                              url: `https://instagram.com/${selectedInstagramAccount.username}`,
+                                            }
+                                          : instagramPageUrl
+                                            ? { url: instagramPageUrl }
+                                            : undefined
+                                      );
+                                    }}
                                     className="h-4 w-4 text-indigo-500"
                                   />
                                   {page.pictureUrl ? (
@@ -1440,7 +1479,21 @@ export function SetupMetaAdsStep({
                                     <button
                                       key={account.id}
                                       type="button"
-                                      onClick={() => setInstagramPageUrl(url)}
+                                      onClick={() => {
+                                        setInstagramPageUrl(url);
+                                        void persistMetaSelection(
+                                          selectedFacebookPage
+                                            ? {
+                                                id: selectedFacebookPage.id,
+                                                name: selectedFacebookPage.name,
+                                                link: selectedFacebookPage.link ?? facebookPageUrl,
+                                              }
+                                            : facebookPageUrl
+                                              ? { link: facebookPageUrl }
+                                              : undefined,
+                                          { url }
+                                        );
+                                      }}
                                       className={`flex items-center gap-3 p-4 rounded-lg border transition-colors text-left ${
                                         isSelected
                                           ? 'border-indigo-500 bg-indigo-500/10'

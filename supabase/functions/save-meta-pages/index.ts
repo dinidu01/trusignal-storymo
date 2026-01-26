@@ -125,7 +125,7 @@ Deno.serve(async (req) => {
     );
 
     if (!uploadResponse.ok) {
-      log.error("Failed to store ad creative", { status: 500 });
+      log.error("Failed to store ad creative", { status: 500, uploadResponse });
       return new Response(JSON.stringify({ error: "Failed to store ad creative" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
