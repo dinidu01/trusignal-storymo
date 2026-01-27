@@ -1,3 +1,4 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createLogger } from "../_shared/logger.ts";
 
 const log = createLogger("upload-ad-image");
@@ -108,44 +109,32 @@ Deno.serve(async (req) => {
     : `${crypto.randomUUID()}.${fallbackExt}`;
   const storagePath = `${ideaId}/ad-campaign/${filename}`;
 
-  const uploadResponse = await fetch(
-    `${supabaseUrl}/storage/v1/object/idea-storage/${storagePath}`,
-    {
-      method: "PUT",
-      headers: {
-        Authorization: authHeader,
-        apikey: supabaseAnonKey,
-        "Content-Type": mimeType,
-      },
-      body: bytes,
-    }
-  );
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
 
-  if (!uploadResponse.ok) {
-    log.error("Failed to upload ad image", { status: 500 });
-    return new Response(JSON.stringify({ error: "Failed to upload ad image" }), {
+  const { error: uploadError } = await supabase.storage
+    .from("idea-storage")
+    .upload(storagePath, bytes, { contentType: mimeType, upsert: true });
+
+  if (uploadError) {
+    log.error("Failed to upload ad media", { status: 500, error: uploadError.message });
+    return new Response(JSON.stringify({ error: "Failed to upload ad media" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 
-  const userResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
-    headers: {
-      Authorization: authHeader,
-      apikey: supabaseAnonKey,
-    },
-  });
-
-  if (!userResponse.ok) {
-    log.error("Unable to resolve user", { status: 401 });
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError) {
+    log.error("Unable to resolve user", { status: 401, error: userError.message });
     return new Response(JSON.stringify({ error: "Unable to resolve user" }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 
-  const userData = await userResponse.json();
-  const userId = userData?.id ? String(userData.id) : null;
+  const userId = userData?.user?.id ?? null;
   if (!userId) {
     log.error("Missing user id", { status: 401 });
     return new Response(JSON.stringify({ error: "Missing user id" }), {
@@ -154,56 +143,40 @@ Deno.serve(async (req) => {
     });
   }
 
-  const insertResponse = await fetch(`${supabaseUrl}/rest/v1/ad_campaigns`, {
-    method: "POST",
-    headers: {
-      Authorization: authHeader,
-      apikey: supabaseAnonKey,
-      "Content-Type": "application/json",
-      Prefer: "return=representation",
-    },
-    body: JSON.stringify({
+  const { data: campaignData, error: campaignError } = await supabase
+    .from("ad_campaigns")
+    .insert({
       user_id: userId,
       idea_id: ideaId,
       status: "queued",
       creative_storage_path: storagePath,
-    }),
-  });
+    })
+    .select("id")
+    .single();
 
-  if (!insertResponse.ok) {
-    log.error("Failed to create ad campaign", { status: 500 });
+  if (campaignError) {
+    log.error("Failed to create ad campaign", { status: 500, error: campaignError.message });
     return new Response(JSON.stringify({ error: "Failed to create ad campaign" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 
-  const inserted = await insertResponse.json();
-  const adCampaignId = Array.isArray(inserted) ? inserted[0]?.id : null;
+  const adCampaignId = campaignData?.id ?? null;
 
-  const signResponse = await fetch(
-    `${supabaseUrl}/storage/v1/object/sign/idea-storage/${storagePath}`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: authHeader,
-        apikey: supabaseAnonKey,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ expiresIn: 3600 }),
-    }
-  );
+  const { data: signedData, error: signedError } = await supabase.storage
+    .from("idea-storage")
+    .createSignedUrl(storagePath, 3600);
 
-  if (!signResponse.ok) {
-    log.error("Failed to sign ad image URL", { status: 500 });
+  if (signedError) {
+    log.error("Failed to sign ad media URL", { status: 500, error: signedError.message });
     return new Response(JSON.stringify({ error: "Failed to sign ad image URL" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 
-  const signData = await signResponse.json();
-  const signedUrl = signData?.signedUrl ? `${supabaseUrl}${signData.signedUrl}` : null;
+  const signedUrl = signedData?.signedUrl ?? null;
 
   return new Response(
     JSON.stringify({ signed_url: signedUrl, storage_path: storagePath, ad_campaign_id: adCampaignId }),

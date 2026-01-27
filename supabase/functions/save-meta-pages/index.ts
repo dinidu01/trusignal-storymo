@@ -1,3 +1,4 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createLogger } from "../_shared/logger.ts";
 
 const log = createLogger("save-meta-pages");
@@ -85,6 +86,9 @@ Deno.serve(async (req) => {
     });
   }
 
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
   const token = authHeader.replace("Bearer ", "");
   let creativeStoragePath: string | null = null;
   let creativeSignedUrl: string | null = null;
@@ -111,41 +115,23 @@ Deno.serve(async (req) => {
     const filename = payload.ad_creative.filename?.trim() || `${crypto.randomUUID()}.png`;
     creativeStoragePath = `${ideaId}/ad-creatives/${filename}`;
 
-    const uploadResponse = await fetch(
-      `${supabaseUrl}/storage/v1/object/idea-storage/${creativeStoragePath}`,
-      {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          apikey: supabaseAnonKey,
-          "Content-Type": mimeType,
-        },
-        body: bytes,
-      }
-    );
+    const { error: uploadError } = await supabase.storage
+      .from("idea-storage")
+      .upload(creativeStoragePath, bytes, { contentType: mimeType, upsert: true });
 
-    if (!uploadResponse.ok) {
-      log.error("Failed to store ad creative", { status: 500, uploadResponse });
+    if (uploadError) {
+      log.error("Failed to store ad creative", { status: 500, error: uploadError.message });
       return new Response(JSON.stringify({ error: "Failed to store ad creative" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const signResponse = await fetch(
-      `${supabaseUrl}/storage/v1/object/sign/idea-storage/${creativeStoragePath}`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          apikey: supabaseAnonKey,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ expiresIn: 3600 }),
-      }
-    );
+    const { data: signedData, error: signedError } = await supabase.storage
+      .from("idea-storage")
+      .createSignedUrl(creativeStoragePath, 3600);
 
-    if (!signResponse.ok) {
+    if (signedError) {
       log.error("Failed to sign ad creative URL", { status: 500 });
       return new Response(JSON.stringify({ error: "Failed to sign ad creative URL" }), {
         status: 500,
@@ -153,29 +139,24 @@ Deno.serve(async (req) => {
       });
     }
 
-    const signData = await signResponse.json();
-    creativeSignedUrl = signData?.signedUrl
-      ? `${supabaseUrl}${signData.signedUrl}`
-      : null;
+    creativeSignedUrl = signedData?.signedUrl ?? null;
   }
 
-  const existingResponse = await fetch(`${supabaseUrl}/rest/v1/ideas?id=eq.${ideaId}&select=metadata`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      apikey: supabaseAnonKey,
-    },
-  });
+  const { data: existingRow, error: existingError } = await supabase
+    .from("ideas")
+    .select("metadata")
+    .eq("id", ideaId)
+    .single();
 
-  if (!existingResponse.ok) {
-    log.error("Unable to load idea metadata", { status: 404 });
+  if (existingError) {
+    log.error("Unable to load idea metadata", { status: 404, error: existingError.message });
     return new Response(JSON.stringify({ error: "Unable to load idea metadata" }), {
       status: 404,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 
-  const existingRows = await existingResponse.json();
-  const existingMetadata = Array.isArray(existingRows) && existingRows[0]?.metadata ? existingRows[0].metadata : {};
+  const existingMetadata = existingRow?.metadata ?? {};
 
   const nextMetadata = {
     ...existingMetadata,
@@ -184,18 +165,14 @@ Deno.serve(async (req) => {
     ...(creativeStoragePath ? { meta_ad_creative_path: creativeStoragePath } : {}),
   };
 
-  const updateResponse = await fetch(`${supabaseUrl}/rest/v1/ideas?id=eq.${ideaId}`, {
-    method: "PATCH",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      apikey: supabaseAnonKey,
-      "Content-Type": "application/json",
-      Prefer: "return=representation",
-    },
-    body: JSON.stringify({ metadata: nextMetadata }),
-  });
+  const { data: updatedRow, error: updateError } = await supabase
+    .from("ideas")
+    .update({ metadata: nextMetadata })
+    .eq("id", ideaId)
+    .select("metadata")
+    .single();
 
-  if (!updateResponse.ok) {
+  if (updateError) {
     log.error("Failed to save meta pages", { status: 500 });
     return new Response(JSON.stringify({ error: "Failed to save meta pages" }), {
       status: 500,
@@ -203,10 +180,9 @@ Deno.serve(async (req) => {
     });
   }
 
-  const updatedRows = await updateResponse.json();
   return new Response(
     JSON.stringify({
-      metadata: updatedRows[0]?.metadata ?? nextMetadata,
+      metadata: updatedRow?.metadata ?? nextMetadata,
       ad_creative: creativeStoragePath
         ? { storage_path: creativeStoragePath, signed_url: creativeSignedUrl }
         : null,

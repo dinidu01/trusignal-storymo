@@ -1700,9 +1700,9 @@ export function SetupMetaAdsStep({
                     </div>
                   )}
                   {adImageUrl && uploadedMediaType === 'video' ? (
-                    <video src={adImageUrl} controls className="w-full rounded-lg mt-4" />
+                    <video src={adImageUrl} controls className="w-32 h-32 rounded-lg mt-4 object-cover" />
                   ) : adImageUrl ? (
-                    <img src={adImageUrl} alt="Uploaded preview" className="w-full rounded-lg mt-4" />
+                    <img src={adImageUrl} alt="Uploaded preview" className="w-32 h-32 rounded-lg mt-4 object-cover" />
                   ) : null}
                 </div>
               )}
@@ -1882,7 +1882,7 @@ export function SetupMetaAdsStep({
             </div>
 
             {/* Ad Format Previews */}
-            {adImageUrl && adHeadline && adDescription && adCta && (
+            {adImageUrl && (
               <div className="bg-gray-900 rounded-xl p-8 border border-gray-800 mb-6">
                 <h3 className="text-xl font-semibold text-white mb-6">Ad Format Previews</h3>
                 <div className="grid md:grid-cols-3 gap-6">
@@ -1891,12 +1891,20 @@ export function SetupMetaAdsStep({
                     <h4 className="text-sm font-medium text-gray-400 mb-3 text-center">1:1 Square (Feed)</h4>
                     <div className="bg-gray-800 rounded-lg overflow-hidden border border-gray-700">
                       <div className="aspect-square">
-                        <img src={adImageUrl} alt="Ad preview" className="w-full h-full object-cover" />
+                        {uploadedMediaType === 'video' ? (
+                          <video src={adImageUrl} controls className="w-full h-full object-cover" />
+                        ) : (
+                          <img src={adImageUrl} alt="Ad preview" className="w-full h-full object-cover" />
+                        )}
                       </div>
                       <div className="p-4">
-                        <h5 className="text-white font-semibold mb-1 text-sm">{adHeadline}</h5>
-                        <p className="text-gray-400 text-xs mb-3 line-clamp-2">{adDescription}</p>
-                        <button className="w-full py-2 bg-indigo-600 text-white rounded text-xs font-semibold">{adCta}</button>
+                        <h5 className="text-white font-semibold mb-1 text-sm">{adHeadline || 'Your headline'}</h5>
+                        <p className="text-gray-400 text-xs mb-3 line-clamp-2">
+                          {adDescription || 'Your ad description will appear here.'}
+                        </p>
+                        <button className="w-full py-2 bg-indigo-600 text-white rounded text-xs font-semibold">
+                          {adCta || 'Learn More'}
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -1906,12 +1914,20 @@ export function SetupMetaAdsStep({
                     <h4 className="text-sm font-medium text-gray-400 mb-3 text-center">9:16 Story</h4>
                     <div className="bg-gray-800 rounded-lg overflow-hidden border border-gray-700 max-w-[200px] mx-auto">
                       <div style={{ aspectRatio: '9/16' }}>
-                        <img src={adImageUrl} alt="Ad preview" className="w-full h-full object-cover" />
+                        {uploadedMediaType === 'video' ? (
+                          <video src={adImageUrl} controls className="w-full h-full object-cover" />
+                        ) : (
+                          <img src={adImageUrl} alt="Ad preview" className="w-full h-full object-cover" />
+                        )}
                       </div>
                       <div className="p-3">
-                        <h5 className="text-white font-semibold mb-1 text-xs">{adHeadline}</h5>
-                        <p className="text-gray-400 text-xs mb-2 line-clamp-2">{adDescription}</p>
-                        <button className="w-full py-1.5 bg-indigo-600 text-white rounded text-xs font-semibold">{adCta}</button>
+                        <h5 className="text-white font-semibold mb-1 text-xs">{adHeadline || 'Your headline'}</h5>
+                        <p className="text-gray-400 text-xs mb-2 line-clamp-2">
+                          {adDescription || 'Your ad description will appear here.'}
+                        </p>
+                        <button className="w-full py-1.5 bg-indigo-600 text-white rounded text-xs font-semibold">
+                          {adCta || 'Learn More'}
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -1921,12 +1937,20 @@ export function SetupMetaAdsStep({
                     <h4 className="text-sm font-medium text-gray-400 mb-3 text-center">16:9 Horizontal</h4>
                     <div className="bg-gray-800 rounded-lg overflow-hidden border border-gray-700">
                       <div style={{ aspectRatio: '16/9' }}>
-                        <img src={adImageUrl} alt="Ad preview" className="w-full h-full object-cover" />
+                        {uploadedMediaType === 'video' ? (
+                          <video src={adImageUrl} controls className="w-full h-full object-cover" />
+                        ) : (
+                          <img src={adImageUrl} alt="Ad preview" className="w-full h-full object-cover" />
+                        )}
                       </div>
                       <div className="p-3">
-                        <h5 className="text-white font-semibold mb-1 text-sm">{adHeadline}</h5>
-                        <p className="text-gray-400 text-xs mb-2 line-clamp-2">{adDescription}</p>
-                        <button className="w-full py-2 bg-indigo-600 text-white rounded text-xs font-semibold">{adCta}</button>
+                        <h5 className="text-white font-semibold mb-1 text-sm">{adHeadline || 'Your headline'}</h5>
+                        <p className="text-gray-400 text-xs mb-2 line-clamp-2">
+                          {adDescription || 'Your ad description will appear here.'}
+                        </p>
+                        <button className="w-full py-2 bg-indigo-600 text-white rounded text-xs font-semibold">
+                          {adCta || 'Learn More'}
+                        </button>
                       </div>
                     </div>
                   </div>
