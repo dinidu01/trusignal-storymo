@@ -902,6 +902,7 @@ export function SetupMetaAdsStep({
         throw error;
       }
     } catch (error) {
+      console.log(error);
       const message = error instanceof Error ? error.message : 'Unable to launch the ad campaign.';
       setLaunchError(message);
       setPaymentError(message);
