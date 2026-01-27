@@ -822,36 +822,8 @@ export function SetupMetaAdsStep({
   const handleLaunchPayment = async () => {
     if (adBudgetPerDay === null || adDurationDays === null) return;
 
-    setIsLaunchingPayment(true);
     setPaymentError(null);
-
-    try {
-      let email = userEmail;
-      if (!email) {
-        const { data: userData } = await supabase.auth.getUser();
-        email = userData?.user?.email ?? undefined;
-      }
-
-      const { data, error } = await supabase.functions.invoke('create-checkout-session', {
-        body: {
-          checkoutType: 'ads',
-          pricePerDay: adBudgetPerDay,
-          durationDays: adDurationDays,
-          customerEmail: email,
-          returnStep: 'ads',
-          returnSubStep: adsSubStep,
-        },
-      });
-
-      if (error || !data?.url) {
-        throw error ?? new Error('Missing checkout URL.');
-      }
-
-      window.location.href = data.url;
-    } catch (_error) {
-      setPaymentError('Unable to start checkout. Please try again.');
-      setIsLaunchingPayment(false);
-    }
+    await launchCampaign();
   };
 
   const launchCampaign = async () => {
@@ -2372,10 +2344,10 @@ export function SetupMetaAdsStep({
               </button>
               <button
                 onClick={handleLaunchPayment}
-                disabled={isLaunchingPayment}
+                disabled={isLaunchingCampaign}
                 className="w-full sm:w-auto px-8 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold disabled:opacity-50"
               >
-                {isLaunchingPayment ? 'Redirecting...' : 'Confirm & Launch'}
+                {isLaunchingCampaign ? 'Launching...' : 'Confirm & Launch'}
               </button>
             </div>
             {paymentError && (
