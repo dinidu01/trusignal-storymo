@@ -829,6 +829,7 @@ export function SetupMetaAdsStep({
   const launchCampaign = async () => {
     setIsLaunchingCampaign(true);
     setLaunchError(null);
+    setPaymentError(null);
     hasTriggeredLaunchRef.current = true;
 
     try {
@@ -901,7 +902,9 @@ export function SetupMetaAdsStep({
         throw error;
       }
     } catch (error) {
-      setLaunchError(error instanceof Error ? error.message : 'Unable to launch the ad campaign.');
+      const message = error instanceof Error ? error.message : 'Unable to launch the ad campaign.';
+      setLaunchError(message);
+      setPaymentError(message);
     } finally {
       setIsLaunchingCampaign(false);
     }
