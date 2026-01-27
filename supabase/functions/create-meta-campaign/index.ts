@@ -466,7 +466,7 @@ Deno.serve(async (req) => {
     const startsAt = new Date(now.getTime() + 10 * 60 * 1000);
     const endsAt = new Date(startsAt.getTime() + Math.max(1, Math.round(payload.durationDays)) * 24 * 60 * 60 * 1000);
 
-    const campaignName = `TruSignal Validation ${now.toISOString()}`;
+    const campaignName = `StoryMo Inc. Validation ${now.toISOString()}`;
     const adsetName = `Validation Ad Set ${now.toISOString()}`;
     const creativeName = `Validation Creative ${now.toISOString()}`;
     const adName = `Validation Ad ${now.toISOString()}`;

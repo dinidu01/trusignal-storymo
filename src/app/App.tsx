@@ -323,7 +323,7 @@ export default function App() {
     { id: 'landing' as const, icon: LayoutDashboard, label: 'Create Landing Page' },
     { id: 'ads' as const, icon: Megaphone, label: 'Setup Meta Ads' },
     { id: 'email' as const, icon: Mail, label: 'Setup Email Receiving', optional: true },
-    { id: 'results' as const, icon: BarChart3, label: 'Get your TruSignal' },
+    { id: 'results' as const, icon: BarChart3, label: 'Get your StoryMo Inc.' },
   ];
 
   const activeIdea = useMemo(() => ideas.find((idea) => idea.id === ideaId) ?? null, [ideaId, ideas]);
@@ -352,7 +352,7 @@ export default function App() {
               }`}
             >
               <div className="text-2xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
-                {isSidebarCollapsed ? 'TS' : 'TruSignal'}
+                {isSidebarCollapsed ? 'SM' : 'StoryMo Inc.'}
               </div>
               {!isSidebarCollapsed && (
                 <button
@@ -702,7 +702,7 @@ export default function App() {
       <nav className="sticky top-0 z-50 bg-black/80 backdrop-blur-md border-b border-gray-800">
         <div className="max-w-[1200px] mx-auto px-6 py-4 flex items-center justify-between">
           <div className="text-2xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
-            TruSignal
+            StoryMo Inc.
           </div>
           <button
             className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium"
@@ -722,7 +722,7 @@ export default function App() {
             Validate your idea before you build it.
           </h1>
           <p className="text-2xl text-gray-400 mb-10 leading-relaxed">
-            TruSignal launches a real landing page and real ads for your idea — then shows you if anyone actually cares.
+            StoryMo Inc. launches a real landing page and real ads for your idea — then shows you if anyone actually cares.
           </p>
           <div className="flex flex-col items-center gap-3">
             <div className="relative w-full max-w-3xl">
@@ -792,7 +792,7 @@ export default function App() {
             </div>
           </div>
           <p className="text-center text-xl text-gray-300">
-            TruSignal replaces guessing with a small, controlled experiment.
+            StoryMo Inc. replaces guessing with a small, controlled experiment.
           </p>
         </div>
       </section>
@@ -800,7 +800,7 @@ export default function App() {
       {/* How It Works */}
       <section className="max-w-[1200px] mx-auto px-6 py-20">
         <h2 className="text-4xl font-bold text-center mb-16 text-white">
-          How TruSignal Works
+          How StoryMo Inc. Works
         </h2>
         <div className="grid md:grid-cols-3 gap-12">
           <div className="relative">
@@ -864,10 +864,10 @@ export default function App() {
         </div>
       </section>
 
-      {/* Why TruSignal */}
+      {/* Why StoryMo Inc. */}
       <section className="max-w-[1200px] mx-auto px-6 py-20">
         <h2 className="text-4xl font-bold text-center mb-16 text-white">
-          Why founders use TruSignal
+          Why founders use StoryMo Inc.
         </h2>
         <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
           {[

@@ -796,7 +796,7 @@ export function CreateLandingPageStep({
                   </div>
                 </div>
 
-                {/* TruSignal Domain Option */}
+                {/* StoryMo Inc. Domain Option */}
                 <div className="bg-gray-900 rounded-xl p-8 border border-gray-800">
                   <button
                     type="button"
@@ -822,7 +822,7 @@ export function CreateLandingPageStep({
                         )}
                       </div>
                       <h3 className="text-2xl font-bold text-white flex items-center gap-3">
-                        Use TruSignal Domain
+                        Use StoryMo Inc. Domain
                         <span className="inline-flex items-center rounded-full bg-teal-400/15 text-teal-300 border border-teal-400/30 px-3 py-1 text-xs font-semibold">
                           Simple &amp; Instant
                         </span>
@@ -838,7 +838,7 @@ export function CreateLandingPageStep({
                 </>
               ) : (
                 <>
-                {/* TruSignal Domain Option */}
+                {/* StoryMo Inc. Domain Option */}
                 <div className="bg-gray-900 rounded-xl p-8 border border-gray-800">
                   <button
                     type="button"
@@ -864,7 +864,7 @@ export function CreateLandingPageStep({
                         )}
                       </div>
                       <h3 className="text-2xl font-bold text-white flex items-center gap-3">
-                        Use TruSignal Domain
+                        Use StoryMo Inc. Domain
                         <span className="inline-flex items-center rounded-full bg-teal-400/15 text-teal-300 border border-teal-400/30 px-3 py-1 text-xs font-semibold">
                           Simple &amp; Instant
                         </span>
@@ -958,7 +958,7 @@ export function CreateLandingPageStep({
                     <span className="text-amber-200">{domainChoice === 'custom' ? '30 seconds' : '1 second'}</span>
                   </div>
                   <div className="text-indigo-200 text-sm mt-1">
-                    (TruSignal domain: <span className="text-amber-200">1 second</span>, Custom domain:{' '}
+                    (StoryMo Inc. domain: <span className="text-amber-200">1 second</span>, Custom domain:{' '}
                     <span className="text-amber-200">30 seconds</span>)
                   </div>
                 </div>

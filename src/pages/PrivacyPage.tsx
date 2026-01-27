@@ -14,7 +14,7 @@ export function PrivacyPage({ navigate }: PrivacyPageProps): ReactNode {
             onClick={() => navigate('/')}
             className="text-2xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent"
           >
-            TruSignal
+            StoryMo Inc.
           </button>
           <button
             type="button"
@@ -34,7 +34,7 @@ export function PrivacyPage({ navigate }: PrivacyPageProps): ReactNode {
           <div className="space-y-3">
             <h2 className="text-2xl font-bold text-white">1. What this policy covers</h2>
             <p>
-              This Privacy Policy explains how TruSignal collects, uses, and shares information when you visit our website or use
+              This Privacy Policy explains how StoryMo Inc. collects, uses, and shares information when you visit our website or use
               our services.
             </p>
           </div>

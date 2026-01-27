@@ -18,7 +18,7 @@ export function MyDataPage({ navigate }: MyDataPageProps): ReactNode {
             onClick={() => navigate('/')}
             className="text-2xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent"
           >
-            TruSignal
+            StoryMo Inc.
           </button>
           <button
             type="button"
@@ -33,7 +33,7 @@ export function MyDataPage({ navigate }: MyDataPageProps): ReactNode {
       <section className="max-w-[1100px] mx-auto px-6 py-16">
         <h1 className="text-5xl font-bold text-white">Request account deletion</h1>
         <p className="text-gray-300 mt-3 max-w-3xl">
-          If you would like to delete your TruSignal account and associated personal data, you can submit a request using the
+          If you would like to delete your StoryMo Inc. account and associated personal data, you can submit a request using the
           form below. We may contact you at this email address to verify your identity and confirm the deletion.
         </p>
 
@@ -44,7 +44,7 @@ export function MyDataPage({ navigate }: MyDataPageProps): ReactNode {
               {[
                 {
                   title: 'Submit your request',
-                  description: 'Send us the email address you used with TruSignal so we can locate your account.',
+                  description: 'Send us the email address you used with StoryMo Inc. so we can locate your account.',
                 },
                 {
                   title: 'We verify and confirm',

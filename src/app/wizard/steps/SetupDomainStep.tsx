@@ -26,7 +26,7 @@ export function SetupDomainStep({
       </div>
 
       <div className="max-w-3xl mx-auto">
-        {/* TruSignal Domain Option */}
+        {/* StoryMo Inc. Domain Option */}
         <div className="bg-gray-900 rounded-xl p-8 border border-gray-800">
           <button
             onClick={() => setDomainChoice('trusignal')}
@@ -42,7 +42,7 @@ export function SetupDomainStep({
               >
                 {domainChoice === 'trusignal' && <div className="w-3.5 h-3.5 rounded-full bg-indigo-500"></div>}
               </div>
-              <h3 className="text-2xl font-bold text-white">Use TruSignal Domain</h3>
+              <h3 className="text-2xl font-bold text-white">Use StoryMo Inc. Domain</h3>
             </div>
             <p className="text-gray-400 text-lg ml-10">
               Your landing page will be hosted at{' '}
