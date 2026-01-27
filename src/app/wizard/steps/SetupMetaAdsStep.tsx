@@ -1028,7 +1028,7 @@ export function SetupMetaAdsStep({
       const path = `${ideaId}/${folder}/${latest.name}`;
       const { data: signedData, error: signedError } = await supabase.storage
         .from('idea-storage')
-        .createSignedUrl(path, 3600);
+        .createSignedUrl(path, 60 * 60 * 24 * 7);
 
       if (!signedError && signedData?.signedUrl) {
         setAdImageMethod('ai');

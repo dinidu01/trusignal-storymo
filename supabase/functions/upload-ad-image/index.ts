@@ -166,7 +166,7 @@ Deno.serve(async (req) => {
 
   const { data: signedData, error: signedError } = await supabase.storage
     .from("idea-storage")
-    .createSignedUrl(storagePath, 3600);
+    .createSignedUrl(storagePath, 60 * 60 * 24 * 7);
 
   if (signedError) {
     log.error("Failed to sign ad media URL", { status: 500, error: signedError.message });
