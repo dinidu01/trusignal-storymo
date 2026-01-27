@@ -1034,7 +1034,7 @@ export function SetupMetaAdsStep({
         .createSignedUrl(path, 60 * 60 * 24 * 7);
 
       if (!signedError && signedData?.signedUrl) {
-        setAdImageMethod('ai');
+        setAdImageMethod('upload');
         setAdImageUrl(signedData.signedUrl);
         setUploadedMediaType(isVideo ? 'video' : 'image');
       }
@@ -1714,7 +1714,11 @@ export function SetupMetaAdsStep({
               {adImageMethod === 'ai' && (
                 <div className="bg-indigo-900/20 border border-indigo-500/30 rounded-lg p-5">
                   <p className="text-indigo-300 mb-3">✓ AI will generate an image based on your idea description</p>
-                  {adImageUrl && <img src={adImageUrl} alt="AI Generated Preview" className="w-full rounded-lg" />}
+                  {adImageUrl && uploadedMediaType === 'video' ? (
+                    <video src={adImageUrl} controls className="w-full rounded-lg" />
+                  ) : adImageUrl ? (
+                    <img src={adImageUrl} alt="AI Generated Preview" className="w-full rounded-lg" />
+                  ) : null}
                 </div>
               )}
             </div>
