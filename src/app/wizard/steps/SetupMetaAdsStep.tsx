@@ -1025,7 +1025,10 @@ export function SetupMetaAdsStep({
       }
 
       const latest = entries[0];
-      const path = `${ideaId}/${folder}/${latest.name}`;
+      const filename = String(latest.name ?? '');
+      const ext = filename.split('.').pop()?.toLowerCase() ?? '';
+      const isVideo = ['mp4', 'mov', 'webm'].includes(ext);
+      const path = `${ideaId}/${folder}/${filename}`;
       const { data: signedData, error: signedError } = await supabase.storage
         .from('idea-storage')
         .createSignedUrl(path, 60 * 60 * 24 * 7);
@@ -1033,6 +1036,7 @@ export function SetupMetaAdsStep({
       if (!signedError && signedData?.signedUrl) {
         setAdImageMethod('ai');
         setAdImageUrl(signedData.signedUrl);
+        setUploadedMediaType(isVideo ? 'video' : 'image');
       }
     };
 
