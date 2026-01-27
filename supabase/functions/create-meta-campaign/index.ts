@@ -359,6 +359,12 @@ Deno.serve(async (req) => {
     });
   }
 
+  log.info("Creating meta campaign", {
+    ideaId: payload.ideaId,
+    pageId: payload.pageId,
+    adAccountId,
+  });
+
   if (!payload.pageId?.trim()) {
     log.error("Missing pageId", { status: 400 });
     return new Response(JSON.stringify({ error: "Missing pageId" }), {
@@ -465,6 +471,11 @@ Deno.serve(async (req) => {
     const creativeName = `Validation Creative ${now.toISOString()}`;
     const adName = `Validation Ad ${now.toISOString()}`;
 
+    log.info("Creating Meta campaign", {
+      ideaId: payload.ideaId,
+      pageId: payload.pageId,
+      adAccountId,
+    });
     const campaign = await postMetaForm<{ id: string }>(
       `/${adAccountId}/campaigns`,
       {
@@ -482,6 +493,10 @@ Deno.serve(async (req) => {
 
     const targeting = buildTargeting(payload);
 
+    log.info("Creating Meta ad set", {
+      campaignId: campaign.id,
+      adAccountId,
+    });
     const adset = await postMetaForm<{ id: string }>(
       `/${adAccountId}/adsets`,
       {
@@ -521,6 +536,11 @@ Deno.serve(async (req) => {
       creativeSpec.instagram_actor_id = payload.instagramActorId.trim();
     }
 
+    log.info("Creating Meta ad creative", {
+      campaignId: campaign.id,
+      adsetId: adset.id,
+      adAccountId,
+    });
     const creative = await postMetaForm<{ id: string }>(
       `/${adAccountId}/adcreatives`,
       {
@@ -530,6 +550,12 @@ Deno.serve(async (req) => {
       systemUserToken
     );
 
+    log.info("Creating Meta ad", {
+      campaignId: campaign.id,
+      adsetId: adset.id,
+      creativeId: creative.id,
+      adAccountId,
+    });
     const ad = await postMetaForm<{ id: string }>(
       `/${adAccountId}/ads`,
       {
