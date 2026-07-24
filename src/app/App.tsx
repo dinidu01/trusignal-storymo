@@ -997,7 +997,7 @@ export default function App() {
             <span className="text-gray-700">·</span>
             <a href="#" className="hover:text-indigo-400 transition-colors">Terms</a>
             <span className="text-gray-700">·</span>
-            <a href="#" className="hover:text-indigo-400 transition-colors">Contact</a>
+            <a href="mailto:hello@storymo.app" className="hover:text-indigo-400 transition-colors">Contact</a>
           </div>
         </div>
       </footer>
